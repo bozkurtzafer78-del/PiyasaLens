@@ -43,7 +43,7 @@ services:
     plan: 0.5c-512mb
     schedule: '15 16 * * 1-5'
     dockerCommand: >-
-      curl --fail-with-body --max-time 900 --retry 3 -X POST
+      curl --fail-with-body --max-time 900 -X POST
       -H "Authorization: Bearer $REFRESH_TOKEN"
       "https://$PIYASALENS_API_HOST/api/refresh"
     envVars:
