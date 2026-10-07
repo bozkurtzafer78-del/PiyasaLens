@@ -112,10 +112,10 @@ async function persistMarketSnapshot(payload) {
 }
 function runRefresh() {
   return new Promise((resolve, reject) => {
-    const child = spawn('python3', ['collect_and_analyze.py', '--market', 'all', '--analyze'], { cwd: root, env: process.env });
+    const child = spawn('python3', ['-u', 'collect_and_analyze.py', '--market', 'all', '--analyze'], { cwd: root, env: process.env });
     let output = '';
-    child.stdout.on('data', (chunk) => { output += chunk; });
-    child.stderr.on('data', (chunk) => { output += chunk; });
+    child.stdout.on('data', (chunk) => { output += chunk; process.stdout.write(`[pipeline] ${chunk}`); });
+    child.stderr.on('data', (chunk) => { output += chunk; process.stderr.write(`[pipeline-error] ${chunk}`); });
     child.on('error', reject);
     child.on('close', (code) => code === 0 ? resolve(output) : reject(new Error(output || `Veri görevi ${code} koduyla sonlandı.`)));
   });
