@@ -45,13 +45,10 @@ services:
     dockerCommand: >-
       curl --fail --max-time 900 --retry 3 -X POST
       -H "Authorization: Bearer $REFRESH_TOKEN"
-      "http://$PIYASALENS_API_HOST/api/refresh"
+      "https://$PIYASALENS_API_HOST/api/refresh"
     envVars:
       - key: PIYASALENS_API_HOST
-        fromService:
-          name: piyasalens-api
-          type: web
-          property: hostport
+        value: piyasalens-api.onrender.com
       - key: REFRESH_TOKEN
         fromService:
           name: piyasalens-api
