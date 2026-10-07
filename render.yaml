@@ -31,11 +31,11 @@ services:
       - key: TWELVE_DATA_MAX_SYMBOLS
         value: '60'
       - key: TWELVE_DATA_US_SYMBOLS
-        value: '60'
+        value: '8'
       - key: TWELVE_DATA_SYMBOLS_PER_REQUEST
         value: '8'
       - key: TWELVE_DATA_REQUEST_PAUSE_SECONDS
-        value: '60'
+        value: '0'
 
   - type: cron
     name: piyasalens-daily-refresh
