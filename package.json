@@ -1,0 +1,13 @@
+{
+  "name": "piyasalens-research-console",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "firebase": "^12.19.0",
+    "firebase-admin": "^13.5.0"
+  }
+}

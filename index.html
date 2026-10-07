@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="BIST ve ABD piyasaları için açıklanabilir yapay zeka hisse seçici.">
+  <title>PiyasaLens · Yapay Zeka Hisse Seçici</title>
+  <link rel="stylesheet" href="/propicks.css">
+  <link rel="stylesheet" href="/account.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#top"><span class="brand-mark">P</span><span><b>PIYASALENS</b><small>YAPAY ZEKA HİSSE SEÇİCİ</small></span></a>
+    <nav aria-label="Ana menü"><a class="active" href="#screener">Tarayıcı</a><a href="#ai-picks">Yapay zekâ seçimleri</a><a href="#method">Yöntem</a></nav>
+    <div class="top-actions"><span id="dataStatus" class="status-dot"><i></i> veri yükleniyor</span><div class="watchlist-wrap"><button id="watchlistButton" class="icon-button" aria-label="Takip listesi" aria-expanded="false">☆</button><div id="watchlistMenu" class="watchlist-menu" hidden><div class="watchlist-menu-head"><b>Takip listesi</b><button id="clearWatchlist" type="button">Temizle</button></div><div id="watchlistItems"><span class="muted">Listen boş.</span></div></div></div><button class="icon-button" aria-label="Bildirimler">⌁</button><button id="accountButton" class="avatar" aria-label="Hesap">Z</button></div>
+  </header>
+
+  <div id="accountDialog" class="account-dialog" hidden><div class="account-card" role="dialog" aria-modal="true" aria-labelledby="accountTitle"><button id="closeAccount" class="dialog-close" aria-label="Pencereyi kapat">×</button><span class="panel-kicker purple">PİYASALENS HESABI</span><h2 id="accountTitle">Verilerinizi cihazlarınız arasında taşıyın.</h2><p id="accountCopy">Takip listesi, portföy ve alarm ayarlarını hesabınıza kaydedin.</p><form id="accountForm"><label>E-posta<input id="accountEmail" type="email" autocomplete="email" required></label><label>Şifre<input id="accountPassword" type="password" autocomplete="current-password" minlength="6" required></label><div class="account-actions"><button type="submit" id="signInButton">Giriş yap</button><button type="button" id="signUpButton" class="secondary-button">Hesap oluştur</button></div></form><button type="button" id="signOutButton" class="secondary-button" hidden>Çıkış yap</button><p id="accountStatus" class="muted" role="status"></p></div></div>
+
+  <main id="top">
+    <section class="hero">
+      <div><p class="kicker">GÜNLÜK PİYASA İSTİHBARATI <span id="refreshDate">—</span></p><h1>Bir sonraki<br><em>güçlü fırsatı</em> bul.</h1><p class="hero-copy">650 BIST ve 5.000 ABD enstrümanını tarayan puanlama motoru. Yapay zekâ, yalnızca veride görülen sinyalleri özetler.</p></div>
+      <div class="hero-search"><label for="search">Hisselerde ara</label><div><input id="search" type="search" placeholder="Sembol veya şirket adı" autocomplete="off"><button id="clearSearch" aria-label="Aramayı temizle">⌕</button></div><small>Örnek: ASELS, THYAO, AAPL</small></div>
+    </section>
+
+    <section class="market-bar" id="screener"><div class="market-tabs"><button class="active" data-market="BIST">BIST</button><button data-market="US">ABD</button></div><div class="bar-meta"><span id="universeLabel">BIST evreni · 650 sembol</span><span class="auto-update-label">Hafta içi otomatik güncellenir</span></div></section>
+
+    <section class="dashboard-grid">
+      <div class="panel screener-panel"><div class="panel-head"><div><span class="panel-kicker">PİYASA TARAMA</span><h2>En yüksek puanlı semboller</h2></div><div class="table-tools"><button class="filter active" data-filter="all">Tümü</button><button class="filter" data-filter="score">Skor 80+</button><button class="filter" data-filter="gainers">Yükselenler</button><button class="filter" data-filter="liquid">Likit</button><button class="filter" data-filter="ai">AI seçimleri</button></div></div><div class="table-wrap"><table class="market-table"><thead><tr><th>#</th><th data-sort="symbol" title="Sıralamak için tıkla">Sembol</th><th data-sort="price" title="Sıralamak için tıkla">Fiyat</th><th data-sort="change_pct" title="Sıralamak için tıkla">Değişim</th><th class="sorted" data-sort="screen_score" title="Sıralamak için tıkla">Skor</th><th data-sort="rsi_14" title="Sıralamak için tıkla">RSI</th><th data-sort="pe" title="Sıralamak için tıkla">F/K</th><th data-sort="relative_volume" title="Sıralamak için tıkla">Göreli hacim</th><th>Sinyal</th></tr></thead><tbody id="screenerBody"><tr><td colspan="9" class="empty">Piyasa verisi yükleniyor…</td></tr></tbody></table></div><div class="table-foot"><span id="tableCount">—</span><span id="sortLabel">Skora göre sıralı · Günlük kapanış verisi</span></div></div>
+      <aside class="panel ai-panel" id="ai-picks"><div class="panel-head"><div><span class="panel-kicker purple">YAPAY ZEKÂ ANALİZİ</span><h2>Bugünün seçimleri</h2></div><span class="ai-chip">YAPAY ZEKÂ</span></div><p id="aiSummary" class="ai-summary">Analiz yükleniyor…</p><div id="aiPicks" class="ai-picks"></div><div class="ai-note"><span>i</span><p>Yapay zekâ çıktısı araştırma desteğidir; alım veya satım talimatı değildir.</p></div></aside>
+    </section>
+
+    <section class="stats-grid"><article><span>TARANAN EVREN</span><strong id="statUniverse">—</strong><small>BIST + ABD kapsamı</small></article><article><span>EN YÜKSEK SKOR</span><strong id="statScore">—</strong><small id="statLeader">—</small></article><article><span>POZİTİF FIRSATLAR</span><strong id="statPositive">—</strong><small>Skor ≥ 70</small></article><article><span>VERİ GÜNCELLİĞİ</span><strong id="statFreshness">—</strong><small>Son tamamlanan tarama</small></article></section>
+
+    <section class="detail-grid" id="method"><div class="panel detail-panel"><div class="detail-title-row"><span class="panel-kicker">NEDEN ÖNE ÇIKIYOR?</span><button id="watchlistToggle" class="watch-button" disabled>☆ Takip listesine ekle</button></div><h2 id="detailTitle">Bir sembol seç</h2><p id="detailCopy">Skor bileşenlerini ve temel metrikleri görmek için bir satıra tıkla.</p><div id="detailMetrics" class="metric-list"></div><div class="alert-box"><div class="alert-head"><span class="panel-kicker">ARAŞTIRMA ALARMI</span><span class="muted">yerel</span></div><div class="alert-fields"><label>Hedef fiyat<input id="alertPrice" type="number" min="0" step="0.01" placeholder="İsteğe bağlı"></label><label>Minimum getiri %<input id="alertReturn" type="number" min="0" step="0.1" value="5"></label><button id="saveAlert" disabled>Alarmı kaydet</button></div><div class="alert-actions"><button id="enableNotifications" type="button">Tarayıcı bildirimlerini aç</button><span id="notificationStatus" class="muted">Etkin değil</span></div><p id="alertStatus" class="muted">Alarm kurmak için bir sembol seç.</p></div><div id="aiEvidence" class="ai-evidence"></div><div id="sourceLinks" class="source-links"></div></div><div class="panel method-panel"><span class="panel-kicker">YÖNTEM</span><h2>Şeffaf tasarım.</h2><p>Skor; değerleme, kârlılık, borçluluk, hacim ve teknik momentum sinyallerinin açıklanabilir birleşimidir. Eksik veri puanı yükseltmez.</p><div class="method-tags"><span>Temel analiz</span><span>Momentum</span><span>Risk kontrolleri</span><span>AI özeti</span></div></div></section>
+  </main>
+  <footer><span>PIYASALENS / YAPAY ZEKA HİSSE SEÇİCİ</span><span>Araştırma aracıdır · Yatırım tavsiyesi değildir</span></footer>
+  <script>
+    document.querySelector('[data-filter="ai"]').textContent = 'Yapay zekâ seçimleri';
+    document.querySelector('.method-tags span:last-child').textContent = 'Yapay zekâ özeti';
+  </script>
+  <script type="module" src="/propicks.js"></script>
+</body>
+</html>

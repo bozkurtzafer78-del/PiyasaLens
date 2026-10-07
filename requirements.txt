@@ -1,0 +1,2 @@
+# certifi provides a current CA bundle for Python HTTPS requests on macOS.
+certifi>=2024.0.0

@@ -1,0 +1,2 @@
+const service='http://127.0.0.1:4180';
+fetch(`${service}/api/quote?symbol=THYAO`).then(r=>r.ok?r.json():Promise.reject(new Error('quote unavailable'))).then(q=>{const price=document.querySelector('#price');const input=document.querySelector('#fPrice');if(price)price.textContent=(q.currency==='TRY'?'₺':'$')+Number(q.price).toLocaleString('tr-TR',{minimumFractionDigits:2,maximumFractionDigits:2});if(input)input.value=q.price;window.dispatchEvent(new CustomEvent('trader:quote-updated',{detail:q}))}).catch(()=>{window.dispatchEvent(new CustomEvent('trader:quote-unavailable'))});

@@ -1,0 +1,57 @@
+services:
+  - type: web
+    name: piyasalens-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: 10000
+      - key: REFRESH_TOKEN
+        generateValue: true
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3.5-flash-lite
+      - key: MARKET_DATA_BASE_URL
+        value: https://api.twelvedata.com/eod
+      - key: MARKET_DATA_PROVIDER_NAME
+        value: Twelve Data EOD
+      - key: MARKET_DATA_API_KEY
+        sync: false
+      - key: TWELVE_DATA_MAX_SYMBOLS
+        value: '120'
+      - key: TWELVE_DATA_BIST_SYMBOLS
+        value: '60'
+      - key: TWELVE_DATA_US_SYMBOLS
+        value: '60'
+      - key: TWELVE_DATA_BIST_SUFFIX
+        value: ':BIST'
+      - key: TWELVE_DATA_BATCH_PAUSE_SECONDS
+        value: '2'
+
+  - type: cron
+    name: piyasalens-daily-refresh
+    runtime: docker
+    plan: 0.5c-512mb
+    schedule: '15 16 * * 1-5'
+    dockerCommand: >-
+      sh -c 'curl --fail --max-time 900 --retry 3 -X POST
+      -H "Authorization: Bearer $REFRESH_TOKEN"
+      "http://$PIYASALENS_API_HOST/api/refresh"'
+    envVars:
+      - key: PIYASALENS_API_HOST
+        fromService:
+          name: piyasalens-api
+          type: web
+          property: hostport
+      - key: REFRESH_TOKEN
+        fromService:
+          name: piyasalens-api
+          type: web
+          envVarKey: REFRESH_TOKEN
