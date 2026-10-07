@@ -21,6 +21,16 @@ class TwelveDataError(RuntimeError):
     pass
 
 
+DEFAULT_US_UNIVERSE = [
+    "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AVGO",
+    "BRK.B", "LLY", "JPM", "V", "UNH", "XOM", "MA", "COST", "HD", "PG",
+    "JNJ", "ABBV", "NFLX", "CRM", "ORCL", "WMT", "BAC", "KO", "MRK", "PEP",
+    "AMD", "ADBE", "TMO", "CSCO", "MCD", "ACN", "LIN", "ABT", "IBM", "GE",
+    "QCOM", "INTU", "CAT", "TXN", "AMAT", "DHR", "VZ", "ISRG", "NOW", "PFE",
+    "DIS", "UBER", "SPOT", "PYPL", "PLTR", "SHOP", "SNOW", "PANW", "CRWD", "COIN",
+]
+
+
 def _number(value):
     if value is None or value == "":
         return None
@@ -31,7 +41,10 @@ def _number(value):
 
 
 def _read_universe(path):
-    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    universe_file = Path(path)
+    if not universe_file.exists():
+        return {"US": DEFAULT_US_UNIVERSE}
+    payload = json.loads(universe_file.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
         raise TwelveDataError("Twelve Data evren dosyası nesne olmalı.")
     return {market: [str(symbol).upper() for symbol in symbols] for market, symbols in payload.items()}

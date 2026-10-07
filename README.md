@@ -41,7 +41,7 @@ TradingView tarama endpoint'i üretim veri hattından çıkarılmıştır. BIST 
    - Türkçe arayüz, okunabilir yazı ölçekleri, mobil düzen, erişilebilir metin tablosu ve yerel alarm/takip listesi.
    - JavaScript ve Python testleri çalıştırılıyor; günlük veri tazeliği arayüzde kontrol ediliyor.
 2. **Günlük veri hattı — büyük ölçüde hazır**
-   - BIST Data Service adaptörü tüm servis evrenini, Twelve Data EOD adaptörü seçilmiş ABD evrenini ve ortak normalize şemayı kullanır.
+   - BIST Data Service adaptörü tüm servis evrenini, Twelve Data EOD adaptörü önce 8 sembollük doğrulama evrenini ve ortak normalize şemayı kullanır. İlk başarılı snapshot sonrasında ABD evreni kota ve çalışma süresine göre kademeli büyütülebilir.
    - Ücretsiz planın 800/gün sınırı aşılmadan genişletilebilir; daha geniş evren için plan ve BIST kapsamı doğrulanmalı.
 3. **Kaynak API katmanı — kod hazır, yayın için Blaze gerekli**
    - KAP ve SEC Functions endpoint'leri hazır; Firebase Functions deploy'u için proje Blaze plana geçirilmelidir.
