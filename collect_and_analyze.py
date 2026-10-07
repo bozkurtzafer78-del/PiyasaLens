@@ -51,10 +51,15 @@ def main():
         (data_dir / "latest_strategy.json").write_text(json.dumps(output["gemini"], ensure_ascii=False, indent=2), encoding="utf-8")
     else:
         (data_dir / "latest_strategy.json").write_text(json.dumps({"status": "unavailable", "reason": "Yeterli temel veri olmadan kesin yapay zekâ seçimi yayınlanmaz."}, ensure_ascii=False, indent=2), encoding="utf-8")
+    for error in output.get("errors", []):
+        print(f"Uyarı: {error}")
     print("Çıktı: data/latest_market.json")
     if output.get("gemini"):
         print("AI çıktısı: data/latest_strategy.json")
-    return 0 if not output["errors"] else 1
+    # Bir piyasa başarıyla geldiyse snapshot kullanılabilir durumdadır.
+    # Diğer sağlayıcının geçici hatası günlük yenilemeyi tamamen düşürmemeli;
+    # hata ayrıntısı JSON içindeki errors alanında ve Render logunda korunur.
+    return 0 if output["markets"] else 1
 
 
 if __name__ == "__main__":
