@@ -26,10 +26,10 @@ def main():
     try:
         output = collect_all(markets=([args.market] if args.market != "all" else None))
         for market, batch in output["markets"].items():
-            print(f"{market}: {batch['row_count']} kayıt · Twelve Data EOD")
+            print(f"{market}: {batch['row_count']} kayıt · {batch.get('source', output['provider'])}")
     except TwelveDataError as exc:
-        output = {"generated_at": datetime.now(timezone.utc).isoformat(), "provider": "Twelve Data EOD", "markets": {}, "errors": [str(exc)]}
-        print(f"Twelve Data: HATA · {exc}")
+        output = {"generated_at": datetime.now(timezone.utc).isoformat(), "provider": "BIST Data Service + Twelve Data EOD", "markets": {}, "errors": [str(exc)]}
+        print(f"Veri sağlayıcısı: HATA · {exc}")
     if args.analyze and output["markets"]:
         try:
             output["gemini"] = analyze_candidates({market: payload["items"] for market, payload in output["markets"].items()}, top_n=args.top)
@@ -40,6 +40,8 @@ def main():
     Path("data/latest_market.json").write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")
     if output.get("gemini"):
         Path("data/latest_strategy.json").write_text(json.dumps(output["gemini"], ensure_ascii=False, indent=2), encoding="utf-8")
+    else:
+        Path("data/latest_strategy.json").write_text(json.dumps({"status": "unavailable", "reason": "Yeterli temel veri olmadan kesin yapay zekâ seçimi yayınlanmaz."}, ensure_ascii=False, indent=2), encoding="utf-8")
     print("Çıktı: data/latest_market.json")
     if output.get("gemini"):
         print("AI çıktısı: data/latest_strategy.json")

@@ -70,15 +70,19 @@ def collect_market(market, symbols, endpoint, api_key, max_symbols):
     selected = symbols[:max_symbols]
     if not selected:
         return {"market": market, "source": endpoint, "fetched_at": datetime.now(timezone.utc).isoformat(), "row_count": 0, "items": [], "cache": "miss"}
-    suffix = os.getenv("TWELVE_DATA_BIST_SUFFIX", ":BIST") if market == "BIST" else ""
-    requested = [f"{symbol}{suffix}" if suffix and ":" not in symbol else symbol for symbol in selected]
-    payload = _request(endpoint, requested, api_key)
+    requested = selected
     items = []
-    for requested_symbol in requested:
-        raw = payload.get(requested_symbol) or payload.get(requested_symbol.split(":")[-1])
-        if raw and not raw.get("status") == "error":
-            items.append(_normalize(raw, requested_symbol, market))
-    return {"market": market, "source": endpoint, "fetched_at": datetime.now(timezone.utc).isoformat(), "row_count": len(items), "items": items, "cache": "miss", "requested_count": len(requested)}
+    chunk_size = max(1, int(os.getenv("TWELVE_DATA_SYMBOLS_PER_REQUEST", "8")))
+    for offset in range(0, len(requested), chunk_size):
+        chunk = requested[offset:offset + chunk_size]
+        payload = _request(endpoint, chunk, api_key)
+        for requested_symbol in chunk:
+            raw = payload.get(requested_symbol) or payload.get(requested_symbol.split(":")[-1])
+            if raw and not raw.get("status") == "error":
+                items.append(_normalize(raw, requested_symbol, market))
+        if offset + chunk_size < len(requested):
+            time.sleep(float(os.getenv("TWELVE_DATA_REQUEST_PAUSE_SECONDS", "60")))
+    return {"market": market, "source": "Twelve Data · günlük kapanış", "provider": "Twelve Data EOD", "data_quality": "eod", "delayed": True, "fetched_at": datetime.now(timezone.utc).isoformat(), "row_count": len(items), "items": items, "cache": "miss", "requested_count": len(requested)}
 
 
 def collect_all(universe_path="data/universe.json", markets=None):
@@ -88,11 +92,18 @@ def collect_all(universe_path="data/universe.json", markets=None):
         raise TwelveDataError("MARKET_DATA_API_KEY yapılandırılmadı.")
     endpoint = os.getenv("MARKET_DATA_BASE_URL", "https://api.twelvedata.com/eod")
     max_symbols = int(os.getenv("TWELVE_DATA_MAX_SYMBOLS", "120"))
-    market_limits = {"BIST": int(os.getenv("TWELVE_DATA_BIST_SYMBOLS", str(max_symbols // 2))), "US": int(os.getenv("TWELVE_DATA_US_SYMBOLS", str(max_symbols - max_symbols // 2)))}
+    market_limits = {"US": int(os.getenv("TWELVE_DATA_US_SYMBOLS", str(max_symbols)))}
     universe = _read_universe(universe_path)
-    output = {"generated_at": datetime.now(timezone.utc).isoformat(), "provider": "Twelve Data EOD", "markets": {}, "errors": []}
+    output = {"generated_at": datetime.now(timezone.utc).isoformat(), "provider": "BIST Data Service + Twelve Data EOD", "markets": {}, "errors": []}
     selected_markets = tuple(markets or ("BIST", "US"))
     for market in selected_markets:
+        if market == "BIST":
+            from bist_data_service import BistDataServiceError, collect_bist
+            try:
+                output["markets"][market] = collect_bist()
+            except BistDataServiceError as exc:
+                output["errors"].append(f"BIST: {exc}")
+            continue
         symbols = universe.get(market, [])[:market_limits.get(market, 0)]
         try:
             batch = collect_market(market, symbols, endpoint, api_key, len(symbols))

@@ -21,19 +21,21 @@ services:
       - key: MARKET_DATA_BASE_URL
         value: https://api.twelvedata.com/eod
       - key: MARKET_DATA_PROVIDER_NAME
-        value: Twelve Data EOD
+        value: Twelve Data EOD (ABD) + BIST Data Service
       - key: MARKET_DATA_API_KEY
         sync: false
+      - key: BIST_DATA_SERVICE_URL
+        sync: false
+      - key: BIST_DATA_SERVICE_API_KEY
+        sync: false
       - key: TWELVE_DATA_MAX_SYMBOLS
-        value: '120'
-      - key: TWELVE_DATA_BIST_SYMBOLS
         value: '60'
       - key: TWELVE_DATA_US_SYMBOLS
         value: '60'
-      - key: TWELVE_DATA_BIST_SUFFIX
-        value: ':BIST'
-      - key: TWELVE_DATA_BATCH_PAUSE_SECONDS
-        value: '2'
+      - key: TWELVE_DATA_SYMBOLS_PER_REQUEST
+        value: '8'
+      - key: TWELVE_DATA_REQUEST_PAUSE_SECONDS
+        value: '60'
 
   - type: cron
     name: piyasalens-daily-refresh
@@ -41,9 +43,9 @@ services:
     plan: 0.5c-512mb
     schedule: '15 16 * * 1-5'
     dockerCommand: >-
-      sh -c 'curl --fail --max-time 900 --retry 3 -X POST
+      curl --fail --max-time 900 --retry 3 -X POST
       -H "Authorization: Bearer $REFRESH_TOKEN"
-      "http://$PIYASALENS_API_HOST/api/refresh"'
+      "http://$PIYASALENS_API_HOST/api/refresh"
     envVars:
       - key: PIYASALENS_API_HOST
         fromService:

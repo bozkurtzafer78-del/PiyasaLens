@@ -22,6 +22,12 @@ try {
   }
 } catch (error) { console.warn(`Firestore sunucu bağlantısı kurulamadı: ${error.message}`); }
 let refreshRunning = false;
+const providerStatus = () => ({
+  bist: { configured: Boolean(process.env.BIST_DATA_SERVICE_URL), mode: 'delayed', endpoint: process.env.BIST_DATA_SERVICE_URL ? 'configured' : 'missing' },
+  us: { configured: Boolean(process.env.MARKET_DATA_API_KEY), provider: 'Twelve Data EOD', mode: 'daily-close' },
+  ai: { configured: Boolean(process.env.GEMINI_API_KEY), provider: process.env.GEMINI_MODEL || 'configured-model' },
+  firestore: { configured: Boolean(firestore), mode: 'server-side persistence' },
+});
 const kapDate = (date) => new Intl.DateTimeFormat('tr-TR', { timeZone: 'Europe/Istanbul', day: '2-digit', month: '2-digit', year: 'numeric' }).format(date);
 async function kapRequest(path, options = {}) {
   const response = await fetch(`https://www.kap.org.tr${path}`, { ...options, headers: { ...kapHeaders, ...(options.headers || {}) }, signal: AbortSignal.timeout(15000) });
@@ -73,7 +79,9 @@ async function getSecFilings(symbol) {
   return value;
 }
 async function readMarketFile() {
-  return JSON.parse(await readFile(join(root, 'data/latest_market.json'), 'utf-8'));
+  const data = JSON.parse(await readFile(join(root, 'data/latest_market.json'), 'utf-8'));
+  if (!data.provider || /tradingview/i.test(JSON.stringify(data))) throw new Error('Eski/uygunsuz veri kaynağı reddedildi; yeni veri görevi bekleniyor.');
+  return data;
 }
 async function readCloudMarket() {
   if (!firestore) return null;
@@ -81,7 +89,7 @@ async function readCloudMarket() {
     const pages = await firestore.collection(`marketSnapshots/latest_${market}/pages`).orderBy('page').get();
     if (pages.empty) return null;
     const first = pages.docs[0].data();
-    return [market, { market, source: first.source, fetched_at: first.fetched_at, row_count: first.row_count, items: pages.docs.flatMap((page) => page.data().items || []) }];
+    return [market, { market, source: first.source, provider: first.provider, data_quality: first.data_quality, delayed: first.delayed, fetched_at: first.fetched_at, row_count: first.row_count, items: pages.docs.flatMap((page) => page.data().items || []) }];
   }).concat([firestore.doc('marketSnapshots/meta').get()]));
   const meta = marketSnapshots.pop();
   const markets = Object.fromEntries(marketSnapshots.filter(Boolean));
@@ -95,7 +103,7 @@ async function persistMarketSnapshot(payload) {
     const items = snapshot.items || [];
     for (let page = 0; page * 500 < items.length; page += 1) {
       const pageItems = items.slice(page * 500, (page + 1) * 500);
-      batch.set(firestore.doc(`marketSnapshots/latest_${market}/pages/${String(page).padStart(4, '0')}`), { market, source: snapshot.source, fetched_at: snapshot.fetched_at, row_count: snapshot.row_count, page, items: pageItems });
+      batch.set(firestore.doc(`marketSnapshots/latest_${market}/pages/${String(page).padStart(4, '0')}`), { market, source: snapshot.source, provider: snapshot.provider, data_quality: snapshot.data_quality, delayed: snapshot.delayed, fetched_at: snapshot.fetched_at, row_count: snapshot.row_count, page, items: pageItems });
     }
   }
   batch.set(firestore.doc('marketSnapshots/meta'), { generated_at: payload.generated_at, errors: payload.errors || [], markets: Object.keys(payload.markets || {}), updatedAt: new Date().toISOString() });
@@ -118,7 +126,12 @@ http.createServer(async (req, res) => {
   if (path.startsWith('..')) { res.writeHead(403); res.end('Forbidden'); return; }
   if (pathname === '/api/health') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
-    res.end(JSON.stringify({ status: 'ok', firestore: Boolean(firestore), refreshRunning }));
+    res.end(JSON.stringify({ status: 'ok', firestore: Boolean(firestore), refreshRunning, providers: providerStatus() }));
+    return;
+  }
+  if (pathname === '/api/providers') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify({ generated_at: new Date().toISOString(), providers: providerStatus(), disclaimer: 'Gecikmeli/araştırma verisi; otomatik emir ve kesin yatırım sinyali yoktur.' }));
     return;
   }
   if (pathname === '/api/market') {

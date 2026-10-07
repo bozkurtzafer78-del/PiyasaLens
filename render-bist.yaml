@@ -1,0 +1,25 @@
+# Armert-Labs/bist-data-service için ayrı Render Blueprint'i.
+# Redis olmadan tek servis/in-memory modunda çalışır; kişisel geliştirme için
+# ücretsiz ve en az kaynak tüketen yapı budur. Kalıcı cache gerekirse sonradan
+# Render Key Value eklenebilir.
+services:
+  - type: web
+    name: piyasalens-bist-data
+    repo: https://github.com/Armert-Labs/bist-data-service
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    # Dockerfile zaten app.main:app ve 8000 portunu tanımlar; Render'da
+    # Docker Command alanı boş bırakılmalıdır.
+    healthCheckPath: /health
+    envVars:
+      - key: API_HOST
+        value: 0.0.0.0
+      - key: API_KEYS
+        generateValue: true
+      - key: AUTH_REQUIRED
+        value: 'true'
+      - key: PROVIDERS
+        value: yahoo_chart,isyatirim
+      - key: UPDATE_INTERVAL
+        value: '86400'

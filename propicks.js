@@ -106,6 +106,7 @@ async function loadSources(item) {
 }
 
 function signal(item) {
+  if (item.screen_score == null) return ['watch', 'Veri sınırlı'];
   if ((item.screen_score || 0) >= 80) return ['review', 'İncele'];
   if ((item.screen_score || 0) < 50) return ['risk', 'Risk'];
   return ['watch', 'İzle'];
@@ -143,7 +144,9 @@ function selectSymbol(symbol) {
   if (!state.selected) return;
   const item = state.selected;
   $('detailTitle').textContent = `${item.symbol} · ${item.name}`;
-  $('detailCopy').textContent = `Tarama skoru ${number(item.screen_score, 0)}/100. ${item.screen_reasons?.length ? `Öne çıkan sinyaller: ${item.screen_reasons.join(', ')}.` : 'Bu sembol için açıklanabilir sinyal bulunamadı.'}`;
+  $('detailCopy').textContent = item.screen_score == null
+    ? `${item.source || 'Gecikmeli veri'} · Araştırma amaçlı görünüm. Temel veri tamamlanmadan kesin sinyal üretilmez.`
+    : `Tarama skoru ${number(item.screen_score, 0)}/100. ${item.screen_reasons?.length ? `Öne çıkan sinyaller: ${item.screen_reasons.join(', ')}.` : 'Bu sembol için açıklanabilir sinyal bulunamadı.'}`;
   $('detailMetrics').innerHTML = [['Fiyat', number(item.price)], ['Değişim', pct(item.change_pct)], ['F/K', number(item.pe, 1)], ['Özsermaye kârlılığı', pct(item.roe)], ['Borç / özsermaye', number(item.debt_to_equity, 2)], ['RSI', number(item.rsi_14, 1)], ['Göreli hacim', `${number(item.relative_volume, 2)}x`]].map(([label, value]) => `<span><b>${esc(label)}</b> ${esc(value)}</span>`).join('');
   const alert = state.alerts[item.symbol] || {};
   $('alertPrice').value = alert.price ?? '';
@@ -171,9 +174,10 @@ function openSymbol(symbol) {
 
 function renderPicks() {
   const result = state.strategy?.result;
-  $('aiSummary').textContent = localizeAiText(result?.market_summary || 'Yapay zekâ analizi henüz oluşturulmadı.');
+  const hasResearchReadyScores = [...(state.data?.markets?.BIST?.items || []), ...(state.data?.markets?.US?.items || [])].some((item) => item.screen_score != null);
+  $('aiSummary').textContent = hasResearchReadyScores ? localizeAiText(result?.market_summary || 'Yapay zekâ analizi henüz oluşturulmadı.') : 'Gecikmeli/EOD fiyat verisi mevcut. Temel veri bağlantısı tamamlanana kadar kesin hisse seçimi yayınlanmaz.';
   const picks = result?.picks || [];
-  $('aiPicks').innerHTML = picks.length ? picks.map((pick) => `<article class="ai-pick" data-ai-symbol="${esc(pick.symbol)}"><span class="ai-rank">#${pick.rank}</span><div><b>${esc(pick.symbol)}</b><p>${esc(localizeAiText(pick.thesis))}</p></div><span class="confidence">${number(pick.confidence, 0)}%</span></article>`).join('') : '<p class="empty">Henüz yapay zekâ seçimi yok.</p>';
+  $('aiPicks').innerHTML = hasResearchReadyScores && picks.length ? picks.map((pick) => `<article class="ai-pick" data-ai-symbol="${esc(pick.symbol)}"><span class="ai-rank">#${pick.rank}</span><div><b>${esc(pick.symbol)}</b><p>${esc(localizeAiText(pick.thesis))}</p></div><span class="confidence">${number(pick.confidence, 0)}%</span></article>`).join('') : '<p class="empty">Veri kapsamı tamamlanana kadar kesin seçim yayınlanmıyor.</p>';
   document.querySelectorAll('[data-ai-symbol]').forEach((card) => card.addEventListener('click', () => openSymbol(card.dataset.aiSymbol)));
 }
 
@@ -189,6 +193,24 @@ function renderStats() {
   const date = state.data?.generated_at ? new Date(state.data.generated_at) : null;
   $('statFreshness').textContent = date ? date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '—';
   $('refreshDate').textContent = date ? date.toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+  const pulse = (market) => {
+    const marketItems = state.data?.markets?.[market]?.items || [];
+    const changes = marketItems.map((item) => Number(item.change_pct)).filter(Number.isFinite);
+    const average = changes.length ? changes.reduce((sum, value) => sum + value, 0) / changes.length : null;
+    const positive = changes.length ? (changes.filter((value) => value > 0).length / changes.length) * 100 : null;
+    return { count: marketItems.length, average, positive };
+  };
+  const bistPulse = pulse('BIST');
+  const usPulse = pulse('US');
+  const pulseText = (value) => value == null ? '—' : `${value >= 0 ? '+' : ''}${value.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
+  $('pulseBist').textContent = pulseText(bistPulse.average);
+  $('pulseBist').className = bistPulse.average == null ? '' : bistPulse.average >= 0 ? 'pulse-positive' : 'pulse-negative';
+  $('pulseBistMeta').textContent = `${number(bistPulse.count, 0)} sembol · ${bistPulse.positive == null ? '—' : `%${bistPulse.positive.toLocaleString('tr-TR', { maximumFractionDigits: 0 })} pozitif`}`;
+  $('pulseUs').textContent = pulseText(usPulse.average);
+  $('pulseUs').className = usPulse.average == null ? '' : usPulse.average >= 0 ? 'pulse-positive' : 'pulse-negative';
+  $('pulseUsMeta').textContent = `${number(usPulse.count, 0)} sembol · ${usPulse.positive == null ? '—' : `%${usPulse.positive.toLocaleString('tr-TR', { maximumFractionDigits: 0 })} pozitif`}`;
+  $('pulseCoverage').textContent = number(items.length, 0);
+  $('pulseCoverageMeta').textContent = `${bistPulse.count ? 'BIST gecikmeli' : 'BIST bekleniyor'} · ${usPulse.count ? 'ABD EOD' : 'ABD bekleniyor'}`;
 }
 
 function switchMarket(market) {
@@ -224,15 +246,18 @@ async function loadData() {
     if (!staticResponse.ok && !marketResponse?.ok) throw new Error('market data unavailable');
     const remote = marketResponse?.ok ? await marketResponse.json() : null;
     const fallback = staticResponse.ok ? await staticResponse.json() : null;
-    state.data = remote?.markets ? remote : fallback;
+    const isLegacy = (payload) => !payload?.provider || /tradingview/i.test(JSON.stringify(payload));
+    state.data = remote?.markets && !isLegacy(remote) ? remote : (!isLegacy(fallback) ? fallback : null);
     if (!state.data) throw new Error('market data unavailable');
-    state.strategy = strategyResponse.ok ? await strategyResponse.json() : null;
+    const strategy = strategyResponse.ok ? await strategyResponse.json() : null;
+    state.strategy = state.data.provider === 'BIST Data Service + Twelve Data EOD' ? strategy : null;
     const generatedAt = state.data.generated_at ? new Date(state.data.generated_at) : null;
     const ageHours = generatedAt && !Number.isNaN(generatedAt.getTime()) ? (Date.now() - generatedAt.getTime()) / 3600000 : Infinity;
     const ok = !state.data.errors?.length && Object.keys(state.data.markets || {}).length;
-    const statusLabel = !ok ? 'veri uyarısı' : ageHours > 36 ? 'veri eski' : 'günlük doğrulanmış veri';
+    const delayed = Object.values(state.data.markets || {}).some((market) => market.delayed || market.data_quality === 'delayed' || market.data_quality === 'eod');
+    const statusLabel = !ok ? 'veri uyarısı' : delayed ? (ageHours > 36 ? 'gecikmeli · veri eski' : 'gecikmeli · araştırma verisi') : ageHours > 36 ? 'veri eski' : 'günlük araştırma verisi';
     $('dataStatus').innerHTML = `<i></i> ${statusLabel}`;
-    $('dataStatus').title = ok && ageHours > 36 ? 'Son tarama 36 saatten daha eski.' : 'Son tamamlanan günlük tarama.';
+    $('dataStatus').title = delayed ? 'BIST verisi gecikmeli, ABD verisi günlük kapanıştır. Araştırma amaçlıdır; otomatik emir gönderilmez.' : 'Son tamamlanan günlük tarama.';
     renderStats(); renderPicks(); switchMarket(state.market);
     [...state.watchlist].forEach((symbol) => {
       const item = [...(state.data.markets.BIST?.items || []), ...(state.data.markets.US?.items || [])].find((candidate) => candidate.symbol === symbol);

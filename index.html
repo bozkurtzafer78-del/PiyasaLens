@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="BIST ve ABD piyasaları için açıklanabilir yapay zeka hisse seçici.">
   <title>PiyasaLens · Yapay Zeka Hisse Seçici</title>
-  <link rel="stylesheet" href="/propicks.css">
-  <link rel="stylesheet" href="/account.css">
+  <link rel="stylesheet" href="./propicks.css">
+  <link rel="stylesheet" href="./account.css">
 </head>
 <body>
   <header class="topbar">
@@ -19,14 +19,20 @@
 
   <main id="top">
     <section class="hero">
-      <div><p class="kicker">GÜNLÜK PİYASA İSTİHBARATI <span id="refreshDate">—</span></p><h1>Bir sonraki<br><em>güçlü fırsatı</em> bul.</h1><p class="hero-copy">650 BIST ve 5.000 ABD enstrümanını tarayan puanlama motoru. Yapay zekâ, yalnızca veride görülen sinyalleri özetler.</p></div>
+      <div><p class="kicker">GÜNLÜK PİYASA İSTİHBARATI <span id="refreshDate">—</span></p><h1>Bir sonraki<br><em>güçlü fırsatı</em> bul.</h1><p class="hero-copy">BIST’te gecikmeli, ABD’de günlük kapanış verisini araştırma amacıyla birlikte izleyen puanlama motoru.</p><p class="data-disclaimer">Veriler gecikmeli/araştırma amaçlıdır. Otomatik emir, ticari dağıtım ve kesin yatırım sinyali yoktur.</p></div>
       <div class="hero-search"><label for="search">Hisselerde ara</label><div><input id="search" type="search" placeholder="Sembol veya şirket adı" autocomplete="off"><button id="clearSearch" aria-label="Aramayı temizle">⌕</button></div><small>Örnek: ASELS, THYAO, AAPL</small></div>
     </section>
 
-    <section class="market-bar" id="screener"><div class="market-tabs"><button class="active" data-market="BIST">BIST</button><button data-market="US">ABD</button></div><div class="bar-meta"><span id="universeLabel">BIST evreni · 650 sembol</span><span class="auto-update-label">Hafta içi otomatik güncellenir</span></div></section>
+    <section class="market-bar" id="screener"><div class="market-tabs"><button class="active" data-market="BIST">BIST</button><button data-market="US">ABD</button></div><div class="bar-meta"><span id="universeLabel">BIST evreni · yükleniyor</span><span class="auto-update-label">Hafta içi otomatik güncellenir</span></div></section>
+
+    <section class="market-pulse" aria-label="Piyasa özeti">
+      <article class="pulse-card"><div class="pulse-label"><span class="pulse-dot bist"></span>BIST <small>gecikmeli</small></div><strong id="pulseBist">—</strong><span id="pulseBistMeta">Veri bekleniyor</span></article>
+      <article class="pulse-card"><div class="pulse-label"><span class="pulse-dot us"></span>ABD <small>günlük kapanış</small></div><strong id="pulseUs">—</strong><span id="pulseUsMeta">Veri bekleniyor</span></article>
+      <article class="pulse-card pulse-wide"><div class="pulse-label"><span class="pulse-dot data"></span>VERİ KAPSAMI</div><strong id="pulseCoverage">—</strong><span id="pulseCoverageMeta">BIST Data Service + Twelve Data</span></article>
+    </section>
 
     <section class="dashboard-grid">
-      <div class="panel screener-panel"><div class="panel-head"><div><span class="panel-kicker">PİYASA TARAMA</span><h2>En yüksek puanlı semboller</h2></div><div class="table-tools"><button class="filter active" data-filter="all">Tümü</button><button class="filter" data-filter="score">Skor 80+</button><button class="filter" data-filter="gainers">Yükselenler</button><button class="filter" data-filter="liquid">Likit</button><button class="filter" data-filter="ai">AI seçimleri</button></div></div><div class="table-wrap"><table class="market-table"><thead><tr><th>#</th><th data-sort="symbol" title="Sıralamak için tıkla">Sembol</th><th data-sort="price" title="Sıralamak için tıkla">Fiyat</th><th data-sort="change_pct" title="Sıralamak için tıkla">Değişim</th><th class="sorted" data-sort="screen_score" title="Sıralamak için tıkla">Skor</th><th data-sort="rsi_14" title="Sıralamak için tıkla">RSI</th><th data-sort="pe" title="Sıralamak için tıkla">F/K</th><th data-sort="relative_volume" title="Sıralamak için tıkla">Göreli hacim</th><th>Sinyal</th></tr></thead><tbody id="screenerBody"><tr><td colspan="9" class="empty">Piyasa verisi yükleniyor…</td></tr></tbody></table></div><div class="table-foot"><span id="tableCount">—</span><span id="sortLabel">Skora göre sıralı · Günlük kapanış verisi</span></div></div>
+      <div class="panel screener-panel"><div class="panel-head"><div><span class="panel-kicker">PİYASA TARAMA</span><h2>İzleme evreni</h2></div><div class="table-tools"><button class="filter active" data-filter="all">Tümü</button><button class="filter" data-filter="score">Skor 80+</button><button class="filter" data-filter="gainers">Yükselenler</button><button class="filter" data-filter="liquid">Likit</button><button class="filter" data-filter="ai">AI seçimleri</button></div></div><div class="table-wrap"><table class="market-table"><thead><tr><th>#</th><th data-sort="symbol" title="Sıralamak için tıkla">Sembol</th><th data-sort="price" title="Sıralamak için tıkla">Fiyat</th><th data-sort="change_pct" title="Sıralamak için tıkla">Değişim</th><th class="sorted" data-sort="screen_score" title="Sıralamak için tıkla">Skor</th><th data-sort="rsi_14" title="Sıralamak için tıkla">RSI</th><th data-sort="pe" title="Sıralamak için tıkla">F/K</th><th data-sort="relative_volume" title="Sıralamak için tıkla">Göreli hacim</th><th>Sinyal</th></tr></thead><tbody id="screenerBody"><tr><td colspan="9" class="empty">Piyasa verisi yükleniyor…</td></tr></tbody></table></div><div class="table-foot"><span id="tableCount">—</span><span id="sortLabel">Skora göre sıralı · Gecikmeli/EOD araştırma verisi</span></div></div>
       <aside class="panel ai-panel" id="ai-picks"><div class="panel-head"><div><span class="panel-kicker purple">YAPAY ZEKÂ ANALİZİ</span><h2>Bugünün seçimleri</h2></div><span class="ai-chip">YAPAY ZEKÂ</span></div><p id="aiSummary" class="ai-summary">Analiz yükleniyor…</p><div id="aiPicks" class="ai-picks"></div><div class="ai-note"><span>i</span><p>Yapay zekâ çıktısı araştırma desteğidir; alım veya satım talimatı değildir.</p></div></aside>
     </section>
 
@@ -39,6 +45,6 @@
     document.querySelector('[data-filter="ai"]').textContent = 'Yapay zekâ seçimleri';
     document.querySelector('.method-tags span:last-child').textContent = 'Yapay zekâ özeti';
   </script>
-  <script type="module" src="/propicks.js"></script>
+  <script type="module" src="./propicks.js"></script>
 </body>
 </html>

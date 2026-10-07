@@ -13,7 +13,7 @@ test('daily quota policy removes manual refresh and frequent polling', async () 
 });
 
 test('backend schedule is limited to one weekday run', async () => {
-  const functions = await read('functions/index.js');
-  assert.match(functions, /schedule:\s*'15 19 \* \* 1-5'/);
-  assert.match(functions, /range:\s*\[0, 500\]/);
+  const render = await read('render.yaml');
+  assert.match(render, /schedule:\s*'15 16 \* \* 1-5'/);
+  assert.match(render, /dockerCommand:/);
 });
