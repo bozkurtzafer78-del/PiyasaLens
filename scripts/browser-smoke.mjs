@@ -27,14 +27,26 @@ const server = http.createServer(async (req, res) => {
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const profile = await mkdtemp(join(tmpdir(), 'piyasalens-chrome-'));
-const chrome = spawn(executable, ['--headless', '--no-sandbox', '--disable-dev-shm-usage', '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
+const chrome = spawn(executable, ['--headless', '--no-sandbox', '--disable-dev-shm-usage', '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank'], { stdio: ['ignore', 'pipe', 'pipe'] });
 let socket, closeBrowser;
 try {
-  const port = await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('Chrome başlangıç süresi aşıldı.')), 15000);
-    chrome.stderr.on('data', chunk => { const match = String(chunk).match(/DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)/); if (match) { clearTimeout(timer); resolve(match[1]); } });
-    chrome.on('exit', code => { clearTimeout(timer); reject(new Error(`Chrome çıktı: ${code}`)); });
-  });
+  // Chrome can split its diagnostic line or use another loopback hostname.
+  // Its profile file is the reliable port discovery contract.
+  let diagnostics = '';
+  const capture = chunk => { diagnostics = (diagnostics + chunk).slice(-8000); };
+  chrome.stderr.on('data', capture); chrome.stdout.on('data', capture);
+  const deadline = Date.now() + 30000;
+  let port;
+  while (!port) {
+    try {
+      const value = (await readFile(join(profile, 'DevToolsActivePort'), 'utf8')).split('\n')[0];
+      if (/^\d+$/.test(value)) port = Number(value);
+    } catch {}
+    const match = diagnostics.match(/DevTools listening on ws:\/\/(?:127\.0\.0\.1|localhost|\[::1\]):(\d+)/);
+    if (!port && match) port = Number(match[1]);
+    if (chrome.exitCode != null || Date.now() > deadline) throw new Error(`Chrome başlatılamadı (${chrome.exitCode ?? 'timeout'}): ${diagnostics}`);
+    if (!port) await new Promise(resolve => setTimeout(resolve, 100));
+  }
   const pages = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
   socket = new WebSocket(pages.find(page => page.type === 'page').webSocketDebuggerUrl);
   await new Promise((resolve, reject) => { socket.addEventListener('open', resolve, { once: true }); socket.addEventListener('error', reject, { once: true }); });
