@@ -12,6 +12,7 @@ npm ci --prefix functions
 python3 -m pip install -r requirements.txt
 cp .env.example .env
 npm test
+npm run test:browser
 python3 -m unittest discover -v
 npm start
 ```
@@ -22,11 +23,13 @@ Arayüz: http://localhost:4173. Anahtarlar `.env` içine veya sunucu ortamına g
 python3 collect_and_analyze.py --market all --analyze
 ```
 
-BIST için `BIST_DATA_SERVICE_URL` ve gerekiyorsa `BIST_DATA_SERVICE_API_KEY`; ABD için `MARKET_DATA_API_KEY` gerekir. BIST toplama ABD anahtarına bağlı değildir. ABD evreni `data/universe.json` ile yönetilir; varsayılan sekiz semboldür. Çoklu istekler arasında 60 saniye beklenir. Günlük görevin aynı gün yeniden çağrılması başarılı snapshot varsa sağlayıcıyı tekrar çağırmaz. Başarısız yenileme önceki başarılı dosyayı korur. Kısmi sağlayıcı hataları açıkça raporlanır.
+BIST için `BIST_DATA_SERVICE_URL` ve gerekiyorsa `BIST_DATA_SERVICE_API_KEY`; ABD için `MARKET_DATA_API_KEY` gerekir. BIST toplama ABD anahtarına bağlı değildir. ABD evreni `data/universe.json` ile yönetilir; varsayılan sekiz semboldür. Çoklu istekler arasında 60 saniye beklenir. Günlük görevin aynı gün yeniden çağrılması başarılı snapshot varsa sağlayıcıyı tekrar çağırmaz. Başarısız yenileme önceki başarılı dosyayı korur. Kısmi sağlayıcı hataları açıkça raporlanır. Başarısız piyasanın mevcut yerel snapshot'ı yeni snapshot'a korunmuş veri olarak eklenir; o piyasanın kaynak tarihi ilerletilmez. Sunucu yeniden başladığında yerel dosya yoksa yalnız bulutta kalmış eski piyasanın bu birleştirme sırasında yeniden kullanımı desteklenmez.
 
 ## Puanlama ve yapay zekâ
 
 Fiyat sağlayıcıları tek başına temel finansal metrik sağlamaz. `FUNDAMENTALS_PATH` ile yerel dosya veya `FUNDAMENTALS_URL` ile HTTPS JSON kaynağı bağlanır. İsteğe bağlı anahtar `FUNDAMENTALS_API_KEY` ile sunucuda tutulur. [Veri sözleşmesi](data/README.md) kaynak, tarih ve metrik birimlerini açıklar. Başlangıç dosyası boştur; gerçek finansal veri içermez.
+
+Tarayıcı testi sistemde Chrome gerektirir; gerekirse `CHROME_BIN` ile yol belirtin. Test verileri yalnız bu test için oluşturulur.
 
 Ağırlıklar: F/K %30, ROE %20, gelir büyümesi %20, RSI %15, borç/özsermaye %15. En az üç kullanılabilir bileşen ve %65 veri kapsamı gerekir. Eksik bileşenlerin ağırlığı kalanlara aktarılmaz. Tek bir ucuz F/K yüksek toplam skor üretemez. Temel veri en fazla 180 günlük, teknik veri en fazla dört günlük olabilir. Skor bir yatırım tavsiyesi değildir.
 
@@ -41,7 +44,7 @@ Gemini için `GEMINI_API_KEY` ve hesabınızın erişebildiği `GEMINI_MODEL` ge
 
 Sunucu yalnız açıkça izin verilen web dosyalarını sunar. `.env`, kaynak kod, paketler ve cache dosyaları sunulmaz. Cloud snapshot sayfaları önce yazılır, aktif snapshot işaretçisi en son güncellenir; daha küçük yeni evrende eski sayfalar karışmaz. Eski sürüm sayfalarının saklama/temizleme politikası yayın ortamında ayrıca belirlenmelidir.
 
-Kullanıcı profilleri Firestore `users/{uid}/profile/main` altında tutulur. Güvenlik kuralları yalnız hesap sahibinin erişimine izin verir. Hesaptan çıkışta o hesabın yerel takip ve alarm verileri temizlenir. Alarmlar uygulama açıkken veri yükleme/seçim sırasında değerlendirilir; arka planda push servisi yoktur.
+Kullanıcı profilleri Firestore `users/{uid}/profile/main` altında tutulur. Güvenlik kuralları yalnız hesap sahibinin erişimine izin verir. Hesaptan çıkışta o hesabın yerel takip ve alarm verileri temizlenir. Getiri alarmı, alarm kaydedilirken alınan referans fiyattan hesaplanır; günlük yüzde değişimi kullanmaz. Eski getiri alarmları referans fiyat için yeniden kaydedilmelidir. Alarm kaldırma düğmesi ve takip listesini temizleme çalışır. Bildirim tekrar denetimi hesap ve sembol bazındadır. Alarmlar uygulama açıkken veri yükleme/seçim sırasında değerlendirilir; arka planda push servisi yoktur.
 
 İsteğe bağlı ayrı Python sözleşme/demo servisi `python3 data_service.py` ile 4180 portunda çalışır. Eksik `backend` modülleri tamamlanmıştır. Ana ekran Node API'sini kullanır. Ayrı Python servisindeki yalnız fiyat içeren analiz kesin karar üretmez.
 

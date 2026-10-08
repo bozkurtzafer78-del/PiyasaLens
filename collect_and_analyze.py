@@ -14,6 +14,7 @@ from gemini_analysis import GeminiAnalysisError, analyze_candidates
 from market_batch import load_env_file, score_candidate
 from backend.enrichment import load_metrics, enrich
 from backend.quality import fresh_quote
+from backend.snapshot import retain_missing_markets
 from twelve_data_batch import TwelveDataError, collect_all
 
 APP_DIR = Path(__file__).resolve().parent
@@ -66,6 +67,7 @@ def main():
         output["gemini"]["generated_at"] = output["generated_at"]
     data_dir = APP_DIR / "data"
     data_dir.mkdir(exist_ok=True)
+    retain_missing_markets(output, data_dir / "latest_market.json", [args.market] if args.market != "all" else ["BIST", "US"])
     temporary = data_dir / "latest_market.json.tmp"
     temporary.write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")
     temporary.replace(data_dir / "latest_market.json")

@@ -15,7 +15,7 @@ export async function readCloudMarket(db) {
     const items = pages.docs.flatMap(page => page.data().items || []);
     if (items.length !== first.row_count) throw new Error(`${market} snapshot eksik.`);
     return [market, { market, source: first.source, provider: first.provider, data_quality: first.data_quality,
-      delayed: first.delayed, fetched_at: first.fetched_at, row_count: items.length, items }];
+      delayed: first.delayed, retained: Boolean(first.retained), fetched_at: first.fetched_at, row_count: items.length, items }];
   }));
   if (!pairs.length) return null;
   return { provider: PROVIDER, generated_at: info.generated_at, markets: Object.fromEntries(pairs), errors: info.errors || [], gemini: info.gemini || null };
@@ -36,7 +36,7 @@ export async function persistMarketSnapshot(db, payload) {
       const page = offset / 100;
       batch.set(db.doc(`marketSnapshots/${id}/pages/${String(page).padStart(4, '0')}`), {
         market, source: snapshot.source || '', provider: snapshot.provider || '', data_quality: snapshot.data_quality || 'partial',
-        delayed: Boolean(snapshot.delayed), fetched_at: snapshot.fetched_at || payload.generated_at,
+        delayed: Boolean(snapshot.delayed), retained: Boolean(snapshot.retained), fetched_at: snapshot.fetched_at || payload.generated_at,
         row_count: items.length, page, items: items.slice(offset, offset + 100),
       });
       if (++writes === 400) { await batch.commit(); batch = db.batch(); writes = 0; }

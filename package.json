@@ -5,7 +5,8 @@
   "scripts": {
     "test": "node --test *.test.js",
     "start": "node server.js",
-    "build": "node scripts/build.mjs"
+    "build": "node scripts/build.mjs",
+    "test:browser": "node scripts/browser-smoke.mjs"
   },
   "dependencies": {
     "firebase-admin": "^14.5.0"

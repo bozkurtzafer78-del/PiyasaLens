@@ -96,7 +96,7 @@ function runRefresh() {
     child.on('close', code => { clearTimeout(timeout); code === 0 ? resolve(output) : reject(new Error(output || `Veri görevi ${code} koduyla sonlandı.`)); });
   });
 }
-const publicFiles = new Set(['index.html', 'propicks.js', 'propicks.css', 'account.css', 'firebase-client.js', 'ui-data.js']);
+const publicFiles = new Set(['index.html', 'propicks.js', 'propicks.css', 'account.css', 'firebase-client.js', 'ui-data.js', 'alerts.js']);
 http.createServer(async (req, res) => {
   const pathname = new URL(req.url || '/', 'http://localhost').pathname;
   const path = pathname === '/' ? 'index.html' : normalize(pathname).replace(/^[/\\]+/, '');

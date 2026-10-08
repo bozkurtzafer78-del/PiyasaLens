@@ -1,3 +1,4 @@
+import { buildAlert, evaluateAlert, notificationKey } from './alerts.js';
 import { marketPulse, validStrategy, dataAgeHours } from './ui-data.js';
 const storedJson = (key, fallback) => { try { const value = JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback)); return Array.isArray(fallback) ? (Array.isArray(value) ? value : fallback) : (value && typeof value === 'object' && !Array.isArray(value) ? value : fallback); } catch { return fallback; } };
 const state = { market: 'BIST', filter: 'all', query: '', sortKey: 'screen_score', sortDir: -1, data: null, strategy: null, selected: null, alerts: storedJson('trader-alerts', {}), watchlist: new Set(storedJson('trader-watchlist', [])) };
@@ -5,19 +6,22 @@ const $ = (id) => document.getElementById(id);
 let cloud = null;
 let cloudUser = null;
 let previousUserId = null;
+let sourceController = null;
+let accountLoading = false;
+let accountReady = false;
 const localizeAiText = (value) => String(value || '').replace(/relative_volume/gi, 'göreli hacim').replace(/market cap/gi, 'piyasa değeri').replace(/ROE/gi, 'özsermaye kârlılığı').replace(/EBITDA/gi, 'FAVÖK').replace(/buy/gi, 'alım').replace(/hold/gi, 'izle').replace(/avoid/gi, 'kaçın');
 const localizeDecision = (value) => ({ BUY: 'ALIM', HOLD: 'İZLE', AVOID: 'KAÇIN', BUY_MORE: 'ALIM', SELL: 'KAÇIN' }[String(value || '').toUpperCase()] || value || 'İZLE');
 const number = (value, digits = 2) => value == null || Number.isNaN(Number(value)) ? '—' : Number(value).toLocaleString('tr-TR', { maximumFractionDigits: digits });
 const pct = (value) => value == null ? '—' : `${Number(value) > 0 ? '+' : ''}${number(value)}%`;
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 function alertText(item, alert) {
-  if (!alert || (!alert.price && !alert.returnPct)) return 'Bu sembol için alarm kurulmadı.';
-  const reached = alert.price && Number(item.price) >= Number(alert.price);
-  return reached ? `Alarm tetiklendi · mevcut fiyat ${number(item.price)} hedefin üzerinde.` : `Alarm aktif · hedef ${alert.price ? number(alert.price) : '—'} · minimum getiri ${number(alert.returnPct ?? 5, 1)}%.`;
+  if (!alert) return 'Bu sembol için alarm kurulmadı.';
+  const result = evaluateAlert(item, alert);
+  if (result.triggered) return `Alarm tetiklendi · mevcut fiyat ${number(item.price)}.`;
+  if (alert.returnPct && !alert.referencePrice) return 'Eski alarm için referans fiyat eksik; alarmı yeniden kaydedin.';
+  return `Alarm aktif · hedef ${alert.price ? number(alert.price) : '—'} · referans ${number(alert.referencePrice)} · minimum getiri ${alert.returnPct ? number(alert.returnPct, 1) + '%' : '—'}.`;
 }
-function targetReached(item, alert) {
-  return Boolean((alert?.price && Number(item.price) >= Number(alert.price)) || (alert?.returnPct && Number(item.change_pct) >= Number(alert.returnPct)));
-}
+const targetReached = (item, alert) => evaluateAlert(item, alert).triggered;
 function updateNotificationStatus() {
   const status = $('notificationStatus');
   if (!('Notification' in window)) { status.textContent = 'Tarayıcı bildirimleri desteklemiyor'; return; }
@@ -25,11 +29,13 @@ function updateNotificationStatus() {
 }
 function notifyIfTriggered(item, alert) {
   if (!targetReached(item, alert) || !('Notification' in window) || Notification.permission !== 'granted') return;
-  const key = `${item.symbol}:${alert.updatedAt || alert.price}`;
-  if (localStorage.getItem('trader-alert-notified') === key) return;
+  if (accountLoading || dataAgeHours({ markets: { current: { items: [item] } } }) > 96) return;
+  const key = notificationKey(item, cloudUser?.uid);
+  const version = alert.updatedAt || JSON.stringify(alert);
+  if (localStorage.getItem(key) === version) return;
   const target = alert.price ? `fiyat hedefi ${number(alert.price)}` : `minimum getiri ${number(alert.returnPct, 1)}%`;
   new Notification(`${item.symbol} alarmı tetiklendi`, { body: `Mevcut fiyat ${number(item.price)} · ${target}` });
-  localStorage.setItem('trader-alert-notified', key);
+  localStorage.setItem(key, version);
 }
 
 function currentItems() {
@@ -39,7 +45,7 @@ function renderWatchlist() {
   const items = [...state.watchlist];
   $('watchlistItems').innerHTML = items.length ? items.map((symbol) => `<div class="watchlist-item"><button class="watch-symbol" data-open-watch="${esc(symbol)}">${esc(symbol)}</button><button class="remove-watch" data-remove-watch="${esc(symbol)}" aria-label="${esc(symbol)} takipten çıkar">×</button></div>`).join('') : '<span class="muted">Listen boş.</span>';
   document.querySelectorAll('[data-open-watch]').forEach((button) => button.addEventListener('click', () => { openSymbol(button.dataset.openWatch); $('watchlistMenu').hidden = true; $('watchlistButton').setAttribute('aria-expanded', 'false'); }));
-  document.querySelectorAll('[data-remove-watch]').forEach((button) => button.addEventListener('click', () => { state.watchlist.delete(button.dataset.removeWatch); persistLocalState(); persistCloudState(); renderWatchlist(); $('watchlistButton').textContent = state.watchlist.size ? `☆ ${state.watchlist.size}` : '☆'; if (state.selected?.symbol === button.dataset.removeWatch) $('watchlistToggle').textContent = '☆ Takip listesine ekle'; }));
+  document.querySelectorAll('[data-remove-watch]').forEach((button) => button.addEventListener('click', () => { if (accountLoading) return; state.watchlist.delete(button.dataset.removeWatch); persistLocalState(); persistCloudState(); renderWatchlist(); $('watchlistButton').textContent = state.watchlist.size ? `☆ ${state.watchlist.size}` : '☆'; if (state.selected?.symbol === button.dataset.removeWatch) $('watchlistToggle').textContent = '☆ Takip listesine ekle'; }));
 }
 
 function persistLocalState() {
@@ -48,8 +54,8 @@ function persistLocalState() {
 }
 
 async function persistCloudState() {
-  if (!cloudUser || !cloud) return;
-  try { await cloud.setDoc(cloud.profileRef(cloudUser.uid), { watchlist: [...state.watchlist], alerts: state.alerts, updatedAt: new Date().toISOString() }, { merge: true }); }
+  if (!cloudUser || !cloud || accountLoading || !accountReady) return;
+  try { await cloud.setDoc(cloud.profileRef(cloudUser.uid), { watchlist: [...state.watchlist], alerts: state.alerts, updatedAt: new Date().toISOString() }); }
   catch { $('accountStatus').textContent = 'Bulut kaydı şu an kullanılamıyor; cihazdaki kayıt korunuyor.'; }
 }
 
@@ -66,56 +72,70 @@ async function initCloudAccount() {
   try { cloud = await import('./firebase-client.js'); }
   catch { return; }
   cloud.onAuthStateChanged(cloud.auth, async (user) => {
-    const signingOut = previousUserId && !user;
+    accountReady = false;
+    const priorOwner = previousUserId;
+    const signingOut = priorOwner && !user;
     previousUserId = user?.uid || null;
     cloudUser = user;
     updateAccountUi();
     if (!user && !signingOut) return;
     if (!user) {
+      accountLoading = false;
       state.watchlist = new Set(); state.alerts = {}; persistLocalState(); renderWatchlist();
       $('watchlistButton').textContent = '☆';
       if (state.selected) selectSymbol(state.selected.symbol);
       return;
     }
+    accountLoading = true;
+    if (priorOwner && priorOwner !== user.uid) { state.watchlist = new Set(); state.alerts = {}; persistLocalState(); renderWatchlist(); }
     try {
       const snapshot = await cloud.getDoc(cloud.profileRef(user.uid));
       if (cloudUser?.uid !== user.uid) return;
+      accountReady = true;
       if (snapshot.exists()) {
         const profile = snapshot.data();
         state.watchlist = new Set(Array.isArray(profile.watchlist) ? profile.watchlist : []);
-        state.alerts = profile.alerts && typeof profile.alerts === 'object' ? profile.alerts : {};
+        state.alerts = profile.alerts && typeof profile.alerts === 'object' && !Array.isArray(profile.alerts) ? profile.alerts : {};
         persistLocalState();
         renderWatchlist();
         $('watchlistButton').textContent = state.watchlist.size ? `☆ ${state.watchlist.size}` : '☆';
         if (state.selected) selectSymbol(state.selected.symbol);
-      } else await persistCloudState();
-    } catch { $('accountStatus').textContent = 'Bulut veritabanı henüz etkin değil; cihazdaki kayıt korunuyor.'; }
+      } else { accountLoading = false; await persistCloudState(); }
+    } catch { if (cloudUser?.uid === user.uid) $('accountStatus').textContent = 'Bulut veritabanı henüz etkin değil; cihazdaki kayıt korunuyor.'; }
+    finally { if (cloudUser?.uid === user.uid) accountLoading = false; }
   });
 }
 
 async function loadSources(item) {
+  sourceController?.abort();
+  const controller = sourceController = new AbortController();
+  const active = () => !controller.signal.aborted && state.selected?.symbol === item.symbol && state.selected?.market === item.market;
   const encodedSymbol = encodeURIComponent(item.symbol);
   if (item.market !== 'BIST') {
     $('sourceLinks').innerHTML = '<div class="source-head"><span class="panel-kicker">BİRİNCİL KAYNAKLAR</span><span class="muted">ABD</span></div><p class="muted source-loading">SEC bildirimleri aranıyor…</p>';
     try {
-      const response = await fetch(`/api/sec?symbol=${encodedSymbol}`);
+      const response = await fetch(`/api/sec?symbol=${encodedSymbol}`, { signal: controller.signal });
       if (!response.ok) throw new Error('Kaynak servisi kullanılamıyor');
       const payload = await response.json();
+      if (!active()) return;
       const items = payload.items || [];
       $('sourceLinks').innerHTML = `<div class="source-head"><span class="panel-kicker">BİRİNCİL KAYNAKLAR</span><span class="muted">${items.length} bildirim</span></div>${items.length ? items.map((source) => `<a href="${esc(source.url)}" target="_blank" rel="noreferrer"><span>${esc(source.form)} · ${esc(source.title)}<small>${esc(source.date)}</small></span><b>↗</b></a>`).join('') : `<p class="muted source-loading">SEC eşleşmesi bulunamadı. <a href="https://www.sec.gov/edgar/search/#/q=${encodedSymbol}" target="_blank" rel="noreferrer">EDGAR aramasını aç ↗</a></p>`}`;
     } catch {
+      if (!active()) return;
       $('sourceLinks').innerHTML = `<div class="source-head"><span class="panel-kicker">BİRİNCİL KAYNAKLAR</span><span class="muted">ABD</span></div><a href="https://www.sec.gov/edgar/search/#/q=${encodedSymbol}" target="_blank" rel="noreferrer">SEC EDGAR aramasını aç <span>↗</span></a>`;
     }
     return;
   }
   $('sourceLinks').innerHTML = '<div class="source-head"><span class="panel-kicker">BİRİNCİL KAYNAKLAR</span><span class="muted">BIST</span></div><p class="muted source-loading">KAP bildirimleri aranıyor…</p>';
   try {
-    const response = await fetch(`/api/kap?symbol=${encodedSymbol}`);
+    const response = await fetch(`/api/kap?symbol=${encodedSymbol}`, { signal: controller.signal });
     if (!response.ok) throw new Error('Kaynak servisi kullanılamıyor');
     const payload = await response.json();
+    if (!active()) return;
     const items = payload.items || [];
     $('sourceLinks').innerHTML = `<div class="source-head"><span class="panel-kicker">BİRİNCİL KAYNAKLAR</span><span class="muted">${items.length} bildirim</span></div>${items.length ? items.map((source) => `<a href="${esc(source.url)}" target="_blank" rel="noreferrer"><span>${esc(source.title)}<small>${esc(source.date)}</small></span><b>↗</b></a>`).join('') : '<p class="muted source-loading">Son 48 saatte eşleşen KAP bildirimi bulunamadı.</p>'}`;
   } catch {
+    if (!active()) return;
     $('sourceLinks').innerHTML = `<div class="source-head"><span class="panel-kicker">BİRİNCİL KAYNAKLAR</span><span class="muted">BIST</span></div><a href="https://www.kap.org.tr/tr/" target="_blank" rel="noreferrer">KAP portalını aç <span>↗</span></a>`;
   }
 }
@@ -176,6 +196,7 @@ function selectSymbol(symbol) {
   loadSources(item);
   $('watchlistToggle').disabled = false;
   $('saveAlert').disabled = false;
+  $('removeAlert').disabled = !state.alerts[item.symbol];
   $('watchlistToggle').textContent = state.watchlist.has(item.symbol) ? '★ Takipte' : '☆ Takip listesine ekle';
   renderTable();
 }
@@ -227,6 +248,7 @@ function renderStats() {
 }
 
 function switchMarket(market) {
+  sourceController?.abort();
   state.market = market;
   document.querySelectorAll('[data-market]').forEach((button) => button.classList.toggle('active', button.dataset.market === market));
   const aiFilter = document.querySelector('[data-filter="ai"]');
@@ -240,6 +262,7 @@ function switchMarket(market) {
   $('detailCopy').textContent = 'Skor bileşenlerini ve temel metrikleri görmek için bir satıra tıkla.';
   $('detailMetrics').innerHTML = '';
   $('saveAlert').disabled = true;
+  $('removeAlert').disabled = true;
   $('alertPrice').value = '';
   $('alertReturn').value = 5;
   $('alertStatus').textContent = 'Alarm kurmak için bir sembol seç.';
@@ -251,17 +274,14 @@ function switchMarket(market) {
 
 async function loadData() {
   try {
-    const [marketResponse, strategyResponse] = await Promise.all([
-      fetch('/api/market?ts=' + Date.now()),
-      fetch('/api/strategy?ts=' + Date.now()).catch(() => null)
-    ]);
+    const marketResponse = await fetch('/api/market?ts=' + Date.now());
     if (!marketResponse.ok) throw new Error('market data unavailable');
     const remote = marketResponse?.ok ? await marketResponse.json() : null;
 
     const isLegacy = (payload) => !payload?.provider || /tradingview/i.test(JSON.stringify(payload));
     state.data = remote?.markets && !isLegacy(remote) ? remote : null;
     if (!state.data) throw new Error('market data unavailable');
-    const strategy = state.data.gemini || (strategyResponse?.ok ? await strategyResponse.json() : null);
+    const strategy = state.data.gemini || null;
     state.strategy = dataAgeHours(state.data) <= 96 ? validStrategy(strategy, state.data) : null;
     const ageHours = dataAgeHours(state.data);
     const ok = !state.data.errors?.length && Object.keys(state.data.markets || {}).length;
@@ -270,7 +290,7 @@ async function loadData() {
     $('dataStatus').innerHTML = `<i></i> ${statusLabel}`;
     $('dataStatus').title = delayed ? 'BIST verisi gecikmeli, ABD verisi günlük kapanıştır. Araştırma amaçlıdır; otomatik emir gönderilmez.' : 'Son tamamlanan günlük tarama.';
     renderStats(); renderPicks(); switchMarket(state.market);
-    [...state.watchlist].forEach((symbol) => {
+    Object.keys(state.alerts).forEach((symbol) => {
       const item = [...(state.data.markets.BIST?.items || []), ...(state.data.markets.US?.items || [])].find((candidate) => candidate.symbol === symbol);
       if (item) notifyIfTriggered(item, state.alerts[symbol]);
     });
@@ -286,7 +306,7 @@ document.querySelectorAll('[data-sort]').forEach((header) => header.addEventList
 $('search').addEventListener('input', (event) => { state.query = event.target.value; renderTable(); });
 $('clearSearch').addEventListener('click', () => { $('search').value = ''; state.query = ''; renderTable(); $('search').focus(); });
 $('watchlistToggle').addEventListener('click', () => {
-  if (!state.selected) return;
+  if (!state.selected || accountLoading) return;
   if (state.watchlist.has(state.selected.symbol)) state.watchlist.delete(state.selected.symbol);
   else state.watchlist.add(state.selected.symbol);
   persistLocalState();
@@ -296,23 +316,41 @@ $('watchlistToggle').addEventListener('click', () => {
   renderWatchlist();
 });
 $('saveAlert').addEventListener('click', () => {
-  if (!state.selected) return;
-  const price = Number($('alertPrice').value) || null;
-  const returnPct = Number($('alertReturn').value) || 5;
-  if (!price && !returnPct) { delete state.alerts[state.selected.symbol]; $('alertStatus').textContent = 'Alarm kaldırıldı.'; $('alertStatus').classList.remove('active'); }
-  else { state.alerts[state.selected.symbol] = { price, returnPct, updatedAt: new Date().toISOString() }; $('alertStatus').textContent = alertText(state.selected, state.alerts[state.selected.symbol]); $('alertStatus').classList.add('active'); $('alertStatus').classList.toggle('triggered', targetReached(state.selected, state.alerts[state.selected.symbol])); notifyIfTriggered(state.selected, state.alerts[state.selected.symbol]); }
-  persistLocalState();
-  persistCloudState();
+  if (!state.selected || accountLoading) return;
+  try {
+    state.alerts[state.selected.symbol] = buildAlert(state.selected, $('alertPrice').value, $('alertReturn').value);
+    persistLocalState(); persistCloudState(); selectSymbol(state.selected.symbol);
+  } catch (error) { $('alertStatus').textContent = error.message; }
+});
+$('removeAlert').addEventListener('click', () => {
+  if (!state.selected || accountLoading) return;
+  delete state.alerts[state.selected.symbol];
+  persistLocalState(); persistCloudState(); selectSymbol(state.selected.symbol);
 });
 $('enableNotifications').addEventListener('click', async () => { if (!('Notification' in window)) return updateNotificationStatus(); await Notification.requestPermission(); updateNotificationStatus(); if (state.selected) notifyIfTriggered(state.selected, state.alerts[state.selected.symbol]); });
 updateNotificationStatus();
+$('clearWatchlist').addEventListener('click', () => {
+  if (accountLoading) return;
+  state.watchlist.clear(); persistLocalState(); persistCloudState(); renderWatchlist();
+  $('watchlistButton').textContent = '☆';
+  if (state.selected) $('watchlistToggle').textContent = '☆ Takip listesine ekle';
+});
 $('watchlistButton').addEventListener('click', () => { const menu = $('watchlistMenu'); menu.hidden = !menu.hidden; $('watchlistButton').setAttribute('aria-expanded', String(!menu.hidden)); });
-$('accountButton').addEventListener('click', () => { $('accountDialog').hidden = false; $('accountEmail').focus(); });
-$('closeAccount').addEventListener('click', () => { $('accountDialog').hidden = true; });
-$('accountDialog').addEventListener('click', (event) => { if (event.target === $('accountDialog')) $('accountDialog').hidden = true; });
+function closeAccount() { $('accountDialog').hidden = true; $('accountPassword').value = ''; $('accountButton').focus(); }
+$('accountButton').addEventListener('click', () => { $('accountDialog').hidden = false; (cloudUser ? $('signOutButton') : $('accountEmail')).focus(); });
+$('closeAccount').addEventListener('click', closeAccount);
+$('accountDialog').addEventListener('click', event => { if (event.target === $('accountDialog')) closeAccount(); });
+$('accountDialog').addEventListener('keydown', event => {
+  if (event.key === 'Escape') { event.preventDefault(); closeAccount(); }
+  if (event.key !== 'Tab') return;
+  const buttons = [...$('accountDialog').querySelectorAll('button, input')].filter(element => !element.disabled && element.getClientRects().length);
+  const first = buttons[0], last = buttons.at(-1);
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+});
 $('accountForm').addEventListener('submit', async (event) => { event.preventDefault(); if (!cloud) { $('accountStatus').textContent = 'Hesap bağlantısı yüklenemedi; yerel kayıt kullanılabilir.'; return; } $('accountStatus').textContent = 'Giriş yapılıyor…'; try { await cloud.signInWithEmailAndPassword(cloud.auth, $('accountEmail').value, $('accountPassword').value); $('accountStatus').textContent = 'Giriş başarılı.'; } catch (error) { $('accountStatus').textContent = error.code === 'auth/invalid-credential' ? 'E-posta veya şifre hatalı.' : 'Giriş başarısız. Firebase Authentication ayarlarını kontrol edin.'; } });
 $('signUpButton').addEventListener('click', async () => { if (!cloud) return; $('accountStatus').textContent = 'Hesap oluşturuluyor…'; try { await cloud.createUserWithEmailAndPassword(cloud.auth, $('accountEmail').value, $('accountPassword').value); $('accountStatus').textContent = 'Hesap oluşturuldu.'; } catch { $('accountStatus').textContent = 'Hesap oluşturulamadı. En az 6 karakterli bir şifre kullanın.'; } });
-$('signOutButton').addEventListener('click', async () => { if (cloud) await cloud.signOut(cloud.auth); $('accountStatus').textContent = 'Çıkış yapıldı.'; });
+$('signOutButton').addEventListener('click', async () => { if (cloud) await cloud.signOut(cloud.auth); $('accountPassword').value = ''; $('accountStatus').textContent = 'Çıkış yapıldı.'; });
 updateAccountUi();
 initCloudAccount();
 if (state.watchlist.size) $('watchlistButton').textContent = `☆ ${state.watchlist.size}`;

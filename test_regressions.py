@@ -84,3 +84,24 @@ class RegressionTests(unittest.TestCase):
     def test_zero_daily_change_is_preserved(self):
         from bist_data_service import _normalize
         self.assertEqual(_normalize({'symbol': 'TEST', 'price': 100, 'change_percent': 0})['change_pct'], 0)
+
+    def test_partial_refresh_retains_failed_market_source_time(self):
+        from backend.snapshot import retain_missing_markets
+        from pathlib import Path
+        import json
+        old = {'provider': 'test', 'markets': {'BIST': {'items': [{'symbol': 'TEST', 'as_of': '2026-01-01'}], 'fetched_at': '2026-01-01'}}}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'market.json'; path.write_text(json.dumps(old))
+            output = retain_missing_markets({'provider': 'test', 'markets': {'US': {'items': [{'symbol': 'US'}]}}, 'errors': []}, path, ['BIST', 'US'])
+        self.assertTrue(output['markets']['BIST']['retained'])
+        self.assertEqual(output['markets']['BIST']['items'][0]['as_of'], '2026-01-01')
+        self.assertTrue(output['errors'])
+
+    def test_wrong_provider_snapshot_cannot_be_reused(self):
+        from backend.snapshot import retain_missing_markets
+        from pathlib import Path
+        import json
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'market.json'; path.write_text(json.dumps({'provider': 'legacy', 'markets': {'BIST': {'items': [1]}}}))
+            output = retain_missing_markets({'provider': 'current', 'markets': {}, 'errors': []}, path, ['BIST'])
+        self.assertEqual(output['markets'], {})
