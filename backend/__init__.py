@@ -1,1 +1,1 @@
-"""Shared, conservative research contracts."""
+"""PiyasaLens backend paketi."""

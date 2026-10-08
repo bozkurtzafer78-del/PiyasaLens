@@ -4,7 +4,6 @@ TradingView erişimi için yalnızca izin verilen bir endpoint kullanılmalıdı
 Bu modül proxy rotasyonu, CAPTCHA aşma veya gizli istemci davranışı içermez.
 """
 import json
-import math
 import os
 import time
 from datetime import datetime, timezone
@@ -48,8 +47,7 @@ def _number(value):
     if value is None or value == "":
         return None
     try:
-        number = float(value)
-        return number if math.isfinite(number) else None
+        return float(value)
     except (TypeError, ValueError):
         return None
 
@@ -113,15 +111,9 @@ def score_candidate(item: dict) -> dict:
     if item.get("debt_to_equity") is not None:
         components.append(("borçluluk", 100 - min(max(item["debt_to_equity"], 0), 300) / 3, .15))
     total_weight = sum(weight for _, _, weight in components)
-    # Missing metrics contribute no points and cannot inflate the remaining weights.
-    coverage = round(total_weight, 2)
-    complete = len(components) >= 3 and coverage >= .65
-    score = round(sum(max(0, min(100, value)) * weight for _, value, weight in components)) if complete else None
+    score = round(sum(value * weight for _, value, weight in components) / total_weight) if total_weight else None
     item["screen_score"] = score
-    item["score_coverage"] = coverage
-    item["research_ready"] = complete
     item["screen_reasons"] = [name for name, _, _ in sorted(components, key=lambda part: part[1], reverse=True)[:3]]
-
     return item
 
 

@@ -3,15 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test *.test.js",
-    "start": "node server.js",
-    "build": "node scripts/build.mjs",
-    "test:browser": "node scripts/browser-smoke.mjs"
+    "test": "node --test",
+    "start": "node server.js"
   },
   "dependencies": {
-    "firebase-admin": "^14.5.0"
-  },
-  "engines": {
-    "node": ">=22"
+    "firebase": "^12.19.0",
+    "firebase-admin": "^13.5.0"
   }
 }

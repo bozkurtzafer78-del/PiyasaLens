@@ -3,11 +3,9 @@ import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { URL } from 'node:url';
-import { readCloudMarket, persistMarketSnapshot } from './snapshot-store.js';
 import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 const root = process.cwd();
-process.loadEnvFile && await readFile(join(root, '.env')).then(() => process.loadEnvFile(join(root, '.env'))).catch(() => {});
 const port = Number(process.env.PORT || 4173);
 const host = process.env.HOST || '0.0.0.0';
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8' };
@@ -82,21 +80,46 @@ async function getSecFilings(symbol) {
 }
 async function readMarketFile() {
   const data = JSON.parse(await readFile(join(root, 'data/latest_market.json'), 'utf-8'));
-  if (!data.provider || !Object.keys(data.markets || {}).length || /tradingview/i.test(JSON.stringify(data))) throw new Error('Eski/uygunsuz veri kaynağı reddedildi; yeni veri görevi bekleniyor.');
+  if (!data.provider || /tradingview/i.test(JSON.stringify(data))) throw new Error('Eski/uygunsuz veri kaynağı reddedildi; yeni veri görevi bekleniyor.');
   return data;
+}
+async function readCloudMarket() {
+  if (!firestore) return null;
+  const [metaSnapshot, ...marketSnapshots] = await Promise.all(['BIST', 'US'].map(async (market) => {
+    const pages = await firestore.collection(`marketSnapshots/latest_${market}/pages`).orderBy('page').get();
+    if (pages.empty) return null;
+    const first = pages.docs[0].data();
+    return [market, { market, source: first.source, provider: first.provider, data_quality: first.data_quality, delayed: first.delayed, fetched_at: first.fetched_at, row_count: first.row_count, items: pages.docs.flatMap((page) => page.data().items || []) }];
+  }).concat([firestore.doc('marketSnapshots/meta').get()]));
+  const meta = marketSnapshots.pop();
+  const markets = Object.fromEntries(marketSnapshots.filter(Boolean));
+  if (!Object.keys(markets).length) return null;
+  return { generated_at: meta.exists ? meta.data().generated_at : new Date().toISOString(), markets, errors: meta.exists ? meta.data().errors || [] : [] };
+}
+async function persistMarketSnapshot(payload) {
+  if (!firestore) return false;
+  const batch = firestore.batch();
+  for (const [market, snapshot] of Object.entries(payload.markets || {})) {
+    const items = snapshot.items || [];
+    for (let page = 0; page * 500 < items.length; page += 1) {
+      const pageItems = items.slice(page * 500, (page + 1) * 500);
+      batch.set(firestore.doc(`marketSnapshots/latest_${market}/pages/${String(page).padStart(4, '0')}`), { market, source: snapshot.source, provider: snapshot.provider, data_quality: snapshot.data_quality, delayed: snapshot.delayed, fetched_at: snapshot.fetched_at, row_count: snapshot.row_count, page, items: pageItems });
+    }
+  }
+  batch.set(firestore.doc('marketSnapshots/meta'), { generated_at: payload.generated_at, errors: payload.errors || [], markets: Object.keys(payload.markets || {}), updatedAt: new Date().toISOString() });
+  await batch.commit();
+  return true;
 }
 function runRefresh() {
   return new Promise((resolve, reject) => {
     const child = spawn('python3', ['-u', 'collect_and_analyze.py', '--market', 'all', '--analyze'], { cwd: root, env: process.env });
     let output = '';
-    const timeout = setTimeout(() => child.kill('SIGKILL'), 850000);
-    child.stdout.on('data', (chunk) => { output = (output + chunk).slice(-20000); process.stdout.write(`[pipeline] ${chunk}`); });
-    child.stderr.on('data', (chunk) => { output = (output + chunk).slice(-20000); process.stderr.write(`[pipeline-error] ${chunk}`); });
-    child.on('error', error => { clearTimeout(timeout); reject(error); });
-    child.on('close', code => { clearTimeout(timeout); code === 0 ? resolve(output) : reject(new Error(output || `Veri görevi ${code} koduyla sonlandı.`)); });
+    child.stdout.on('data', (chunk) => { output += chunk; process.stdout.write(`[pipeline] ${chunk}`); });
+    child.stderr.on('data', (chunk) => { output += chunk; process.stderr.write(`[pipeline-error] ${chunk}`); });
+    child.on('error', reject);
+    child.on('close', (code) => code === 0 ? resolve(output) : reject(new Error(output || `Veri görevi ${code} koduyla sonlandı.`)));
   });
 }
-const publicFiles = new Set(['index.html', 'propicks.js', 'propicks.css', 'account.css', 'firebase-client.js', 'ui-data.js', 'alerts.js']);
 http.createServer(async (req, res) => {
   const pathname = new URL(req.url || '/', 'http://localhost').pathname;
   const path = pathname === '/' ? 'index.html' : normalize(pathname).replace(/^[/\\]+/, '');
@@ -113,9 +136,7 @@ http.createServer(async (req, res) => {
   }
   if (pathname === '/api/market') {
     try {
-      let data;
-      try { data = await readCloudMarket(firestore); } catch (error) { console.warn('Bulut snapshot okunamadı:', error.message); }
-      data ||= await readMarketFile();
+      const data = await readCloudMarket() || await readMarketFile();
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
       res.end(JSON.stringify(data));
     } catch (error) {
@@ -124,36 +145,14 @@ http.createServer(async (req, res) => {
     }
     return;
   }
-  if (pathname === '/api/strategy' || pathname === '/data/latest_strategy.json') {
-    try {
-      let market;
-      try { market = await readCloudMarket(firestore); } catch {}
-      market ||= await readMarketFile();
-      const strategy = market.gemini || { status: 'unavailable', reason: 'Temel veri veya analiz henüz hazır değil.' };
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
-      res.end(JSON.stringify({ ...strategy, generated_at: market.generated_at }));
-    } catch {
-      res.writeHead(503, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ status: 'unavailable' }));
-    }
-    return;
-  }
   if (pathname === '/api/refresh') {
     if (req.method !== 'POST' || !process.env.REFRESH_TOKEN || req.headers.authorization !== `Bearer ${process.env.REFRESH_TOKEN}`) { res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify({ status: 'error', error: 'Yetkisiz güncelleme isteği.' })); return; }
     if (refreshRunning) { res.writeHead(202, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify({ status: 'running' })); return; }
     refreshRunning = true;
     try {
-      const existing = await readCloudMarket(firestore) || await readMarketFile();
-      const day = value => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Istanbul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value));
-      if (!existing.errors?.length && day(existing.generated_at) === day(Date.now())) {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ status: 'cached', generated_at: existing.generated_at })); refreshRunning = false; return;
-      }
-    } catch {}
-    try {
       const output = await runRefresh();
       const data = await readMarketFile();
-      const stored = await persistMarketSnapshot(firestore, data);
+      const stored = await persistMarketSnapshot(data);
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
       res.end(JSON.stringify({ status: 'ok', stored, generated_at: data.generated_at, output: output.slice(-2000) }));
     } catch (error) { res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify({ status: 'error', error: error.message })); }
@@ -174,7 +173,6 @@ http.createServer(async (req, res) => {
     catch (error) { res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify({ status: 'unavailable', symbol, error: `SEC bağlantısı şu an kullanılamıyor: ${error.message}` })); }
     return;
   }
-  if (!publicFiles.has(path)) { res.writeHead(404); res.end('Not found'); return; }
   try { const data = await readFile(join(root, path)); res.writeHead(200, { 'Content-Type': types[extname(path)] || 'text/plain', 'Cache-Control': 'no-store, no-cache, must-revalidate' }); res.end(data); }
   catch { res.writeHead(404); res.end('Not found'); }
-}).listen(port, host, function () { console.log(`PiyasaLens: http://${host}:${this.address().port}`); });
+}).listen(port, host, () => console.log(`PiyasaLens: http://${host}:${port}`));

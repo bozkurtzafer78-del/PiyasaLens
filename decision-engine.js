@@ -1,26 +1,27 @@
 export function calculateDecision(input) {
-  const missing = reason => ({ newBuy: 'Veri yetersiz', holding: 'Veri yetersiz', reason });
-  const numeric = value => value != null && value !== '' && typeof value !== 'boolean' && Number.isFinite(Number(value));
-  if (!['price', 'target', 'buyLow', 'buyHigh', 'stop'].every(key => numeric(input[key]))) return missing('Fiyat, hedef, alım bandı veya stop eksik/geçersiz.');
-  const price = Number(input.price), target = Number(input.target), low = Number(input.buyLow), high = Number(input.buyHigh), stop = Number(input.stop);
-  if (price <= 0 || target <= 0 || low <= 0 || high < low || stop <= 0 || stop >= price) return missing('Fiyat, alım bandı veya stop sıralaması geçersiz.');
-  if (input.dataStatus && !['demo', 'real-time', 'delayed', 'end-of-day'].includes(input.dataStatus)) return missing('Veri durumu doğrulanamadı.');
-  if (input.dataStatus && input.dataStatus !== 'demo' && !numeric(input.dataAgeHours)) return missing('Veri zamanı eksik.');
-  if (input.dataAgeHours != null && (!numeric(input.dataAgeHours) || Number(input.dataAgeHours) < 0 || Number(input.dataAgeHours) > Number(input.maxDataAgeHours ?? 96))) return missing('Veri güncel değil veya zaman geçersiz.');
-  const buyCost = Number(input.buyCost ?? 0), sellCost = Number(input.sellCost ?? 0), minRatio = Number(input.minRatio ?? 2);
-  if (![buyCost, sellCost, minRatio].every(Number.isFinite) || buyCost < 0 || sellCost < 0 || buyCost >= 100 || sellCost >= 100 || minRatio < 2) return missing('Maliyet veya risk/getiri eşiği geçersiz.');
-  const gross = (target / price - 1) * 100;
-  const net = (target * (1 - sellCost / 100) / (price * (1 + buyCost / 100)) - 1) * 100;
-  const risk = (1 - stop * (1 - sellCost / 100) / (price * (1 + buyCost / 100))) * 100;
-  const ratio = Math.max(0, net) / risk;
-  const bandMissed = price < low || price > high;
-  const reason = [];
-  if (bandMissed) reason.push('Fiyat alım bandının dışında.');
-  if (net < 5) reason.push('Net potansiyel %5 eşiğinin altında.');
-  if (ratio < minRatio) reason.push('Risk/getiri koşulu sağlanmıyor.');
-  if (input.thesis === 'broken') reason.push('Yatırım tezi kırılmış.');
-  const eligible = net >= 5 && !bandMissed && ratio >= minRatio && input.thesis !== 'broken';
-  if (eligible) reason.push('Net potansiyel ve risk/getiri koşulu sağlanıyor.');
-  return { newBuy: eligible ? 'Al' : 'Bekle / İzle', holding: input.thesis === 'broken' ? 'Azalt / Sat' : 'Tut',
-    gross, net, risk, ratio, costs: buyCost + sellCost, bandMissed, reason: reason.join(' ') };
+  const required = ['price', 'target', 'buyLow', 'buyHigh'];
+  if (!required.every(k => Number.isFinite(Number(input[k]))) || input.price <= 0 || input.target <= 0) {
+    return { newBuy: 'Veri yetersiz', holding: 'Veri yetersiz', reason: 'Fiyat, hedef veya alım bandı eksik/geçersiz.' };
+  }
+  if (input.dataStatus && input.dataStatus !== 'demo' && input.dataStatus !== 'real-time' && input.dataStatus !== 'delayed' && input.dataStatus !== 'end-of-day') {
+    return { newBuy: 'Veri yetersiz', holding: 'Veri yetersiz', reason: 'Veri durumu doğrulanamadı.' };
+  }
+  if (Number.isFinite(Number(input.dataAgeHours)) && Number(input.dataAgeHours) > Number(input.maxDataAgeHours ?? 24)) {
+    return { newBuy: 'Veri yetersiz', holding: 'Veri yetersiz', reason: `Veri güncel değil: ${input.dataAgeHours} saat önce güncellendi.` };
+  }
+  const costs = Math.max(0, Number(input.buyCost || 0)) + Math.max(0, Number(input.sellCost || 0));
+  const gross = (input.target / input.price - 1) * 100;
+  const net = (((input.target * (1 - Number(input.sellCost || 0) / 100)) / (input.price * (1 + Number(input.buyCost || 0) / 100))) - 1) * 100;
+  const risk = Math.max(0, (input.price - Number(input.stop || input.price * .9)) / input.price * 100);
+  const ratio = risk > 0 ? Math.max(0, net) / risk : null;
+  const bandMissed = input.price > input.buyHigh;
+  let newBuy = 'Bekle / İzle';
+  let reason = [];
+  if (bandMissed) reason.push('Fiyat alım bandının üstünde; yeni giriş koşulu beklenmeli.');
+  if (net < 5) reason.push(`Net potansiyel %${net.toFixed(2)} ile %5 eşiğinin altında.`);
+  if (net >= 5 && !bandMissed && (ratio === null || ratio >= Number(input.minRatio || 2))) {
+    newBuy = 'Al'; reason.push('Net potansiyel ve yapılandırılmış risk/getiri koşulu sağlanıyor.');
+  } else if (!reason.length) reason.push('Tek başına %5 eşiği alım için yeterli değil; ek kanıt beklenmeli.');
+  const holding = input.thesis === 'broken' ? 'Azalt / Sat' : 'Tut';
+  return { newBuy, holding, gross, net, risk, ratio, costs, bandMissed, reason: reason.join(' ') };
 }

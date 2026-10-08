@@ -1,0 +1,70 @@
+{
+  "status": "ok",
+  "model": "gemini-2.5-flash",
+  "result": {
+    "market_summary": "BIST tarafında bankacılık (GARAN, AKBNK) ve sanayi/rafineri (FROTO, TUPRS) hisseleri güçlü getiri momentumu ve makul F/K çarpanlarıyla öne çıkıyor. ABD tarafında yapay zekâ ve yarı iletken öncüsü NVDA ile büyük teknoloji şirketleri gelir büyümesi liderliğini sürdürüyor.",
+    "selection_method": "Güncel piyasa fiyatları üzerinden değerleme, kârlılık, büyüme ve göreli hacim ağırlıklı skorlama modeli.",
+    "picks": [
+      {
+        "symbol": "FROTO",
+        "rank": 1,
+        "decision": "incele",
+        "thesis": "Ford Otosan %38 özsermaye kârlılığı (ROE) ve 10.5 F/K çarpanı ile sanayi tarafında en yüksek skoru (82) koruyor.",
+        "risks": [
+          "Avrupa ticari araç pazarı talep daralması",
+          "Kur oynaklığı"
+        ],
+        "catalysts": [
+          "Elektrikli ticari araç üretim kapasite artışı",
+          "Yüksek ihracat gelirleri"
+        ],
+        "confidence": 88
+      },
+      {
+        "symbol": "GARAN",
+        "rank": 2,
+        "decision": "izle",
+        "thesis": "Garanti BBVA %31 ROE ve 4.8 F/K ile bankacılık sektöründeki güçlü sermaye yeterliliğini yansıtıyor.",
+        "risks": [
+          "Net faiz marjı baskısı",
+          "Regülasyon ve para politikası adımları"
+        ],
+        "catalysts": [
+          "Kredi büyümesindeki toparlanma",
+          "Düşük değerleme çarpanları"
+        ],
+        "confidence": 85
+      },
+      {
+        "symbol": "THYAO",
+        "rank": 3,
+        "decision": "izle",
+        "thesis": "286.25 TL seviyesinde 4.7 F/K ve %26.4 ROE ile tarihsel çarpanlarının altında işlem görüyor.",
+        "risks": [
+          "Jet yakıtı maliyetleri",
+          "Jeopolitik gerilimler"
+        ],
+        "catalysts": [
+          "Yolcu doluluk oranları",
+          "Kargo gelirlerindeki çift haneli büyüme"
+        ],
+        "confidence": 84
+      },
+      {
+        "symbol": "NVDA",
+        "rank": 4,
+        "decision": "incele",
+        "thesis": "NVIDIA $237.47 seviyesinde %72 gelir büyümesi ve %68 ROE ile yapay zekâ altyapı talebini güçlü şekilde nakde çeviriyor.",
+        "risks": [
+          "Yüksek çarpan değerlemesi (45 F/K)",
+          "Çip ihracat kısıtlamaları"
+        ],
+        "catalysts": [
+          "Yeni mimari GPU sevkiyatları",
+          "Bulut sağlayıcılarının artan sermaye harcamaları"
+        ],
+        "confidence": 83
+      }
+    ]
+  }
+}
