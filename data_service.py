@@ -55,7 +55,7 @@ def provider_status():
         "mode": "configured" if configured else "demo",
         "provider": os.getenv("MARKET_DATA_PROVIDER_NAME", "Demo catalog"),
         "realTime": False,
-        "lastSuccessfulUpdate": datetime.now(timezone.utc).isoformat(),
+        "lastSuccessfulUpdate": None,
         "message": "Sağlayıcı bağlantısı yapılandırılmadı." if not configured else "Sağlayıcı yapılandırması bulundu; uç nokta doğrulaması bekliyor.",
     }
 
@@ -81,7 +81,12 @@ def configured_quote(symbol):
     latest = values[0] if values else data
     price = latest.get("close") or latest.get("price")
     as_of = latest.get("datetime") or latest.get("asOf") or latest.get("timestamp")
-    if not isinstance(price, (int, float)) or not as_of:
+    try:
+        price = float(price)
+    except (TypeError, ValueError):
+        price = None
+    import math
+    if price is None or not math.isfinite(price) or price <= 0 or not as_of:
         raise RuntimeError("Sağlayıcı yanıtında price ve asOf alanları zorunlu.")
     return {"symbol": symbol, "price": float(price), "currency": data.get("meta", {}).get("currency", data.get("currency", "USD")), "status": "end-of-day", "asOf": as_of, "source": provider_status()["provider"]}
 
@@ -106,7 +111,7 @@ def build_analysis(symbol):
             "price": item["price"] if item["coverage"] == "demo" else None,
             "currency": item["currency"],
             "status": "demo" if item["coverage"] == "demo" else "unavailable",
-            "asOf": provider_status()["lastSuccessfulUpdate"] if item["coverage"] == "demo" else None,
+            "asOf": "2026-01-01T00:00:00Z" if item["coverage"] == "demo" else None,
             "source": "Demo catalog",
         }
         quote_status = quote_data["status"]
@@ -174,7 +179,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send({"error": "Enstrüman katalogda bulunamadı."}, 404)
             if item["coverage"] != "demo":
                 return self._send({"error": "Bu enstrüman için gerçek veri sağlayıcısı bağlı değil.", "coverage": item["coverage"], "instrument": item}, 503)
-            return self._send({"symbol": symbol, "price": item["price"], "currency": item["currency"], "status": "demo", "asOf": provider_status()["lastSuccessfulUpdate"]})
+            return self._send({"symbol": symbol, "price": item["price"], "currency": item["currency"], "status": "demo", "asOf": "2026-01-01T00:00:00Z"})
         if parsed.path == "/api/analysis":
             symbol = parse_qs(parsed.query).get("symbol", [""])[0].upper()
             try:

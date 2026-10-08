@@ -1,0 +1,12 @@
+node_modules/
+functions/node_modules/
+dist/
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+data/cache/
+data/latest_market.json
+data/latest_strategy.json
+data/fundamentals.json

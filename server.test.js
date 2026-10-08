@@ -1,0 +1,31 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { mkdtemp, writeFile, rm, mkdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { once } from 'node:events';
+test('server serves only public files and guards refresh', async t => {
+  const cwd = await mkdtemp(join(tmpdir(), 'piyasalens-'));
+  await writeFile(join(cwd, 'index.html'), '<html>public</html>');
+  await writeFile(join(cwd, '.env'), 'SECRET=must-not-leak');
+  await writeFile(join(cwd, 'server.js'), 'private-source');
+  await mkdir(join(cwd, 'data'));
+  const data = { provider: 'BIST Data Service + Twelve Data EOD', generated_at: new Date().toISOString(), markets: { BIST: { items: [{ symbol: 'TEST' }] } }, gemini: { status: 'skipped' } };
+  await writeFile(join(cwd, 'data/latest_market.json'), JSON.stringify(data));
+  const child = spawn(process.execPath, [new URL('./server.js', import.meta.url).pathname], { cwd, env: { ...process.env, PORT: '0', HOST: '127.0.0.1', FIREBASE_SERVICE_ACCOUNT_JSON: '', REFRESH_TOKEN: 'test' } });
+  t.after(async () => { if (child.exitCode == null) { child.kill(); await once(child, 'exit'); } await rm(cwd, { recursive: true, force: true }); });
+  let output = '';
+  const base = await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('server timeout')), 10000);
+    child.stdout.on('data', chunk => { output += chunk; const match = output.match(/http:\/\/127\.0\.0\.1:(\d+)/); if (match) { clearTimeout(timer); resolve(match[0]); } });
+    child.on('exit', code => { clearTimeout(timer); reject(new Error(`server exited ${code}`)); });
+  });
+  assert.equal((await fetch(base)).status, 200);
+  for (const path of ['/.env', '/server.js', '/package.json', '/data/cache/private.json', '/.git/config']) assert.equal((await fetch(base + path)).status, 404, path);
+  assert.equal((await fetch(base + '/api/refresh', { method: 'POST' })).status, 401);
+  const cached = await fetch(base + '/api/refresh', { method: 'POST', headers: { Authorization: 'Bearer test' } });
+  assert.equal((await cached.json()).status, 'cached');
+  assert.equal((await (await fetch(base + '/api/market')).json()).markets.BIST.items[0].symbol, 'TEST');
+  assert.equal((await (await fetch(base + '/api/strategy')).json()).generated_at, data.generated_at);
+});

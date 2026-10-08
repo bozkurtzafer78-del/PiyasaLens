@@ -1,58 +1,67 @@
 # PiyasaLens Research Console
 
-Türkçe, responsive bir piyasa araştırma uygulamasıdır. Günlük kapanış/tarama verisi kullanır; sessizce gerçek zamanlı veri iddiasında bulunmaz ve otomatik emir göndermez.
+Türkçe BIST/ABD piyasa araştırma ekranı. BIST gecikmeli, ABD günlük kapanış verisi kullanılır. Takip listesi, yerel tarayıcı alarmları ve isteğe bağlı Firebase hesabı vardır. Otomatik emir gönderilmez.
 
-## Çalıştırma
+## Yerel çalıştırma
+
+Node.js 22 ve Python 3.10+ gerekir.
 
 ```bash
+npm ci
+npm ci --prefix functions
+python3 -m pip install -r requirements.txt
+cp .env.example .env
 npm test
+python3 -m unittest discover -v
 npm start
 ```
 
-Ardından `http://localhost:4173` adresini açın.
+Arayüz: http://localhost:4173. Anahtarlar `.env` içine veya sunucu ortamına girilir. Node ve Python bu dosyayı okur. Fiyat verisi yokken açık bir veri hatası gösterilir; gerçek veri yerine sessizce demo kullanılmaz. İlk snapshot için:
 
-## Mevcut kapsam
+```bash
+python3 collect_and_analyze.py --market all --analyze
+```
 
-- Enstrüman detay görünümü, demo fiyat, veri zamanı ve veri durumu.
-- Net potansiyel hesabı: alış/satış maliyetleriyle birlikte; yuvarlanmamış eşik kontrolü.
-- Yeni alım ve mevcut pozisyon kararlarının ayrılması.
-- Alım bandı aşımı, %5 altı net getiri, minimum 2:1 risk/getiri, eksik veri ve tez kırılması kuralları.
-- JavaScript ve Python katmanlarında toplam 22 otomatik test: %4,99 engeli, %5 tek başına yeterli değil, band aşımı, maliyet etkisi, eksik/veri bayatlığı, birleşik şema, tarama normalizasyonu, karar ayrıştırması ve günlük kota politikası.
-- Demo katalog dışı semboller için kesin karar yerine açıkça “Veri yetersiz” gösterilir; arama sonucu sessizce THYAO verisine düşmez.
-- [data-provider.js](data-provider.js) değiştirilebilir sağlayıcı sınırını ve BIST/ABD/ETF varlık sınıflandırmasını içerir.
-- Oturum açılmadığında pozisyon/takip/alarm bilgileri `localStorage` ile korunur; Firebase hesabı açıldığında kullanıcıya özel Firestore profilinde senkronize edilir. Emir gönderimi yoktur.
-- Gerçek sağlayıcı için [provider-adapter.js](provider-adapter.js) ve [.env.example](.env.example) hazırdır. Güncel veri hattı BIST için `Armert-Labs/bist-data-service` gecikmeli servisini, ABD için Twelve Data EOD'yi kullanır; gerçek zamanlı veri iddiasında bulunmaz.
-- Python veri servisi [data_service.py](data_service.py) ile `/api/status`, `/api/instruments?q=`, `/api/quote?symbol=` ve ortak sözleşmeli `/api/analysis?symbol=` endpoint’lerini sağlar. Proje kökündeki `.env` dosyasını otomatik okur. Çalıştırma: `python3 data_service.py`; test: `python3 -m unittest discover -v`.
-- Node sunucusu `/api/health` ve `/api/providers` ile BIST, Twelve Data, Gemini ve Firestore yapılandırma durumlarını anahtarları açığa çıkarmadan raporlar.
-- BIST verisi Twelve Data kotası tüketmeden ayrı BIST Data Service üzerinden alınır. ABD tarafında `.env.example` Twelve Data `/eod` endpoint’ini kullanır; ücretsiz planın dakika/günlük kotasını korumak için istekler küçük gruplara bölünür. Her iki sağlayıcının kullanım koşulları ve veri lisansı ayrıca doğrulanmalıdır.
-- Birleşik backend çekirdeği `backend/normalized_schema.py` ve `backend/divergence_engine.py` içinde kuruldu. Bu katman HisseRadar KAP, USStockRadar SEC, zfinace quant ve PiyasaLens karar motorunun ortak veri sözleşmesidir.
-- Günlük piyasa pipeline'ı [bist_data_service.py](bist_data_service.py) ile BIST Data Service'in tüm gecikmeli evrenini, [twelve_data_batch.py](twelve_data_batch.py) ile [data/universe.json](data/universe.json) içindeki seçilmiş ABD evrenini alır. Çalıştırma: `python3 collect_and_analyze.py --market all --analyze`. Çıktılar `data/latest_market.json` ve Gemini etkinse `data/latest_strategy.json` içine yazılır.
-- Gemini katmanı [gemini_analysis.py](gemini_analysis.py) yalnızca yerel puanlamadan geçen normalize adayları tek yapılandırılmış JSON isteğiyle analiz eder. `GEMINI_API_KEY`, `GEMINI_MODEL` ve `GEMINI_TOP_N` değerleri `.env` içinde tutulur; anahtar tarayıcıya gönderilmez.
+BIST için `BIST_DATA_SERVICE_URL` ve gerekiyorsa `BIST_DATA_SERVICE_API_KEY`; ABD için `MARKET_DATA_API_KEY` gerekir. BIST toplama ABD anahtarına bağlı değildir. ABD evreni `data/universe.json` ile yönetilir; varsayılan sekiz semboldür. Çoklu istekler arasında 60 saniye beklenir. Günlük görevin aynı gün yeniden çağrılması başarılı snapshot varsa sağlayıcıyı tekrar çağırmaz. Başarısız yenileme önceki başarılı dosyayı korur. Kısmi sağlayıcı hataları açıkça raporlanır.
 
-## Ürün sınırları
+## Puanlama ve yapay zekâ
 
-Güncel sürüm gecikmeli BIST ve günlük ABD kapanış verisi kullanır; gerçek zamanlı fiyat akışı, otomatik emir, ticari dağıtım ve kesin yatırım sinyali yoktur. Manuel veri yenileme kapalıdır. Kullanıcı hesapları ve kalıcı saklama Firebase Authentication/Firestore ile hazırlanmıştır. Render web servisi ve hafta içi cron görevi veri hattını çalıştırır.
+Fiyat sağlayıcıları tek başına temel finansal metrik sağlamaz. `FUNDAMENTALS_PATH` ile yerel dosya veya `FUNDAMENTALS_URL` ile HTTPS JSON kaynağı bağlanır. İsteğe bağlı anahtar `FUNDAMENTALS_API_KEY` ile sunucuda tutulur. [Veri sözleşmesi](data/README.md) kaynak, tarih ve metrik birimlerini açıklar. Başlangıç dosyası boştur; gerçek finansal veri içermez.
 
-TradingView tarama endpoint'i üretim veri hattından çıkarılmıştır. BIST servisi yalnızca gecikmeli/araştırma kullanımında tutulur; Twelve Data yalnızca ABD günlük kapanış verisi için kullanılır.
+Ağırlıklar: F/K %30, ROE %20, gelir büyümesi %20, RSI %15, borç/özsermaye %15. En az üç kullanılabilir bileşen ve %65 veri kapsamı gerekir. Eksik bileşenlerin ağırlığı kalanlara aktarılmaz. Tek bir ucuz F/K yüksek toplam skor üretemez. Temel veri en fazla 180 günlük, teknik veri en fazla dört günlük olabilir. Skor bir yatırım tavsiyesi değildir.
 
-## Üretime geçiş planı
+Gemini için `GEMINI_API_KEY` ve hesabınızın erişebildiği `GEMINI_MODEL` gerekir. Model ismi varsayılmaz. Yeterli metrik yoksa Gemini çağrısı yapılmaz. Çıktıdaki semboller, kararlar ve güven aralığı doğrulanır. Analiz piyasa snapshot'ıyla birlikte saklanır; farklı tarihli analiz güncel verilere bağlanmaz. Arayüz, kaynak fiyatlarının en eskisinin yaşını gösterir; 96 saatten eski veya zamanı eksik veri için AI seçimi göstermez. Bu eşik hafta sonuna tolerans sağlar; borsa tatil takvimiyle otomatik uyarlama içermez.
 
-1. **Temel kalite ve görsel sonlandırma — tamamlandı**
-   - Türkçe arayüz, okunabilir yazı ölçekleri, mobil düzen, erişilebilir metin tablosu ve yerel alarm/takip listesi.
-   - JavaScript ve Python testleri çalıştırılıyor; günlük veri tazeliği arayüzde kontrol ediliyor.
-2. **Günlük veri hattı — büyük ölçüde hazır**
-   - BIST Data Service adaptörü tüm servis evrenini, Twelve Data EOD adaptörü önce 8 sembollük doğrulama evrenini ve ortak normalize şemayı kullanır. İlk başarılı snapshot sonrasında ABD evreni kota ve çalışma süresine göre kademeli büyütülebilir.
-   - Ücretsiz planın 800/gün sınırı aşılmadan genişletilebilir; daha geniş evren için plan ve BIST kapsamı doğrulanmalı.
-3. **Kaynak API katmanı — kod hazır, yayın için Blaze gerekli**
-   - KAP ve SEC Functions endpoint'leri hazır; Firebase Functions deploy'u için proje Blaze plana geçirilmelidir.
-   - Günlük piyasa snapshot'ı için iki toplu tarama isteği hafta içi 19:15 (Europe/Istanbul) zamanlanmıştır. İstemcide manuel yenileme kapalıdır; aynı gün içinde sağlayıcıya tekrar tekrar istek gönderilmez.
-   - Hazır backend yayını için `bash deploy_backend.sh` kullanılabilir.
-4. **Kullanıcı hesabı ve kalıcı saklama — istemci ve güvenlik kodu hazır**
-   - Firebase Web App kaydı, e-posta/şifre hesap ekranı, kullanıcıya özel Firestore şeması ve güvenlik kuralları eklendi.
-   - Firebase Console/Google Cloud tarafında Authentication sağlayıcısı ve Firestore API etkinleştirildiğinde hesap senkronizasyonu aktif olacaktır.
-5. **Otomatik günlük tarama ve bildirimler**
-   - Render `piyasalens-daily-refresh` Cron görevi BIST Data Service + Twelve Data ABD pipeline'ını çalıştırır; çıktı Firestore `marketSnapshots` kayıtlarına sayfalanarak yazılır.
-   - Zamanlanmış Functions/Cloud Scheduler yayını için Firebase projesinin Blaze planında olması gerekir; ücretsiz kotayı korumak için görev yalnızca hafta içi bir kez çalışır.
-   - BIST servisi için [render-bist.yaml](render-bist.yaml) Blueprint'i, `Armert-Labs/bist-data-service` GitHub deposunu ücretsiz, tek servis/in-memory modunda tanımlar. Bu Blueprint'i önce ayrı olarak çalıştırın; oluşan servis URL'sini PiyasaLens Render servisindeki `BIST_DATA_SERVICE_URL` alanına, oluşturulan `API_KEYS` değerini de `BIST_DATA_SERVICE_API_KEY` alanına koyun. Kalıcı önbellek ihtiyacı olursa sonradan Render Key Value eklenebilir.
-6. **Son üretim QA ve yayın**
-   - Mobil/masaüstü tarayıcı kontrolü, hata senaryoları, kaynak bağlantıları, veri tazeliği ve Firebase güvenlik kuralları doğrulanıp son sürüm deploy edilecek.
+## API ve güvenlik
+
+- `GET /api/health`, `/api/providers`: yapılandırma durumu.
+- `GET /api/market`, `/api/strategy`: aynı snapshot'ın fiyatları ve analizi.
+- `GET /api/kap?symbol=THYAO`, `/api/sec?symbol=AAPL`: birincil kaynak bağlantıları.
+- `POST /api/refresh`: yalnız `Authorization: Bearer <REFRESH_TOKEN>` ile çalışır.
+
+Sunucu yalnız açıkça izin verilen web dosyalarını sunar. `.env`, kaynak kod, paketler ve cache dosyaları sunulmaz. Cloud snapshot sayfaları önce yazılır, aktif snapshot işaretçisi en son güncellenir; daha küçük yeni evrende eski sayfalar karışmaz. Eski sürüm sayfalarının saklama/temizleme politikası yayın ortamında ayrıca belirlenmelidir.
+
+Kullanıcı profilleri Firestore `users/{uid}/profile/main` altında tutulur. Güvenlik kuralları yalnız hesap sahibinin erişimine izin verir. Hesaptan çıkışta o hesabın yerel takip ve alarm verileri temizlenir. Alarmlar uygulama açıkken veri yükleme/seçim sırasında değerlendirilir; arka planda push servisi yoktur.
+
+İsteğe bağlı ayrı Python sözleşme/demo servisi `python3 data_service.py` ile 4180 portunda çalışır. Eksik `backend` modülleri tamamlanmıştır. Ana ekran Node API'sini kullanır. Ayrı Python servisindeki yalnız fiyat içeren analiz kesin karar üretmez.
+
+## Render yayını
+
+`render-bist.yaml` ayrı BIST servisini, `render.yaml` ana uygulama ve cron görevini tanımlar. BIST URL'si, sağlayıcı anahtarları, Gemini modeli ve Firebase servis hesabı yayın ortamında ayarlanmalıdır. Ana ekran Render Node servisiyle doğrudan kullanılabilir. Firestore olmadan dosya snapshot'ları geçicidir; kalıcılık için `FIREBASE_SERVICE_ACCOUNT_JSON` gerekir.
+
+Cron hafta içi 16:15 UTC / 19:15 Türkiye saatinde çalışır. Bu saat ABD seansı kapanmadan öncedir; ABD EOD çıktısı önceki tamamlanan seansa ait olabilir. Sağlayıcı veri zamanları arayüzde korunur. Aynı gün ABD kapanışı istenirse görev zamanı ayrıca değiştirilmelidir.
+
+## Firebase Hosting yayını
+
+```bash
+npm ci --prefix functions
+npm run build
+bash deploy_backend.sh
+firebase deploy --project piyasalens --only hosting,firestore
+```
+
+Yayın komutları Firebase CLI kurulumu ve giriş yapılmış hesap gerektirir. Functions parametresi `PIYASALENS_API_URL` mevcut Render backend'inin HTTPS adresi olmalıdır; CLI yayın sırasında ister. `functions/index.js` yalnız okuma API'lerini bu backend'e taşır, yenileme token'ını taşımaz. Functions yayını Blaze planı ve Firebase yetkisi gerektirir. Hosting yalnız `dist/` dosyalarını yayınlar. Authentication e-posta/şifre sağlayıcısı ve Firestore ayrıca etkinleştirilmelidir.
+
+## Doğrulama
+
+JavaScript karar, kota, cloud snapshot, HTTP güvenliği ve UI veri hesaplama testleri; Python normalizasyon, bağımsız BIST toplama, hata koruması, kaynaklı temel veri ve AI kapsam kontrolleri vardır. GitHub Actions iki test grubunu ve web build'ini çalıştırır. Canlı sağlayıcılar ve Firebase/Render yayını anahtar ve hesap erişimi gerektirir; yerel testler bu erişimi doğrulamaz.

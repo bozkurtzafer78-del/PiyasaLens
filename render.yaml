@@ -17,7 +17,13 @@ services:
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_MODEL
-        value: gemini-3.5-flash-lite
+        sync: false
+      - key: FUNDAMENTALS_URL
+        sync: false
+      - key: FUNDAMENTALS_API_KEY
+        sync: false
+      - key: SEC_USER_AGENT
+        sync: false
       - key: MARKET_DATA_BASE_URL
         value: https://api.twelvedata.com/eod
       - key: MARKET_DATA_PROVIDER_NAME
@@ -35,7 +41,7 @@ services:
       - key: TWELVE_DATA_SYMBOLS_PER_REQUEST
         value: '8'
       - key: TWELVE_DATA_REQUEST_PAUSE_SECONDS
-        value: '0'
+        value: '60'
 
   - type: cron
     name: piyasalens-daily-refresh

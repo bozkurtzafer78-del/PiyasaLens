@@ -1,7 +1,10 @@
-const state = { market: 'BIST', filter: 'all', query: '', sortKey: 'screen_score', sortDir: -1, data: null, strategy: null, selected: null, alerts: JSON.parse(localStorage.getItem('trader-alerts') || '{}'), watchlist: new Set(JSON.parse(localStorage.getItem('trader-watchlist') || '[]')) };
+import { marketPulse, validStrategy, dataAgeHours } from './ui-data.js';
+const storedJson = (key, fallback) => { try { const value = JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback)); return Array.isArray(fallback) ? (Array.isArray(value) ? value : fallback) : (value && typeof value === 'object' && !Array.isArray(value) ? value : fallback); } catch { return fallback; } };
+const state = { market: 'BIST', filter: 'all', query: '', sortKey: 'screen_score', sortDir: -1, data: null, strategy: null, selected: null, alerts: storedJson('trader-alerts', {}), watchlist: new Set(storedJson('trader-watchlist', [])) };
 const $ = (id) => document.getElementById(id);
 let cloud = null;
 let cloudUser = null;
+let previousUserId = null;
 const localizeAiText = (value) => String(value || '').replace(/relative_volume/gi, 'göreli hacim').replace(/market cap/gi, 'piyasa değeri').replace(/ROE/gi, 'özsermaye kârlılığı').replace(/EBITDA/gi, 'FAVÖK').replace(/buy/gi, 'alım').replace(/hold/gi, 'izle').replace(/avoid/gi, 'kaçın');
 const localizeDecision = (value) => ({ BUY: 'ALIM', HOLD: 'İZLE', AVOID: 'KAÇIN', BUY_MORE: 'ALIM', SELL: 'KAÇIN' }[String(value || '').toUpperCase()] || value || 'İZLE');
 const number = (value, digits = 2) => value == null || Number.isNaN(Number(value)) ? '—' : Number(value).toLocaleString('tr-TR', { maximumFractionDigits: digits });
@@ -54,7 +57,7 @@ function updateAccountUi() {
   const button = $('accountButton');
   if (!button) return;
   button.textContent = cloudUser ? (cloudUser.email?.slice(0, 1).toUpperCase() || '✓') : 'Z';
-  $('accountCopy').textContent = cloudUser ? `${cloudUser.email} hesabı ile senkronize ediliyor.` : 'Takip listesi, portföy ve alarm ayarlarını hesabınıza kaydedin.';
+  $('accountCopy').textContent = cloudUser ? `${cloudUser.email} hesabı ile senkronize ediliyor.` : 'Takip listesi ve alarm ayarlarını hesabınıza kaydedin.';
   $('accountForm').hidden = Boolean(cloudUser);
   $('signOutButton').hidden = !cloudUser;
 }
@@ -63,17 +66,27 @@ async function initCloudAccount() {
   try { cloud = await import('./firebase-client.js'); }
   catch { return; }
   cloud.onAuthStateChanged(cloud.auth, async (user) => {
+    const signingOut = previousUserId && !user;
+    previousUserId = user?.uid || null;
     cloudUser = user;
     updateAccountUi();
-    if (!user) return;
+    if (!user && !signingOut) return;
+    if (!user) {
+      state.watchlist = new Set(); state.alerts = {}; persistLocalState(); renderWatchlist();
+      $('watchlistButton').textContent = '☆';
+      if (state.selected) selectSymbol(state.selected.symbol);
+      return;
+    }
     try {
       const snapshot = await cloud.getDoc(cloud.profileRef(user.uid));
+      if (cloudUser?.uid !== user.uid) return;
       if (snapshot.exists()) {
         const profile = snapshot.data();
         state.watchlist = new Set(Array.isArray(profile.watchlist) ? profile.watchlist : []);
         state.alerts = profile.alerts && typeof profile.alerts === 'object' ? profile.alerts : {};
         persistLocalState();
         renderWatchlist();
+        $('watchlistButton').textContent = state.watchlist.size ? `☆ ${state.watchlist.size}` : '☆';
         if (state.selected) selectSymbol(state.selected.symbol);
       } else await persistCloudState();
     } catch { $('accountStatus').textContent = 'Bulut veritabanı henüz etkin değil; cihazdaki kayıt korunuyor.'; }
@@ -86,6 +99,7 @@ async function loadSources(item) {
     $('sourceLinks').innerHTML = '<div class="source-head"><span class="panel-kicker">BİRİNCİL KAYNAKLAR</span><span class="muted">ABD</span></div><p class="muted source-loading">SEC bildirimleri aranıyor…</p>';
     try {
       const response = await fetch(`/api/sec?symbol=${encodedSymbol}`);
+      if (!response.ok) throw new Error('Kaynak servisi kullanılamıyor');
       const payload = await response.json();
       const items = payload.items || [];
       $('sourceLinks').innerHTML = `<div class="source-head"><span class="panel-kicker">BİRİNCİL KAYNAKLAR</span><span class="muted">${items.length} bildirim</span></div>${items.length ? items.map((source) => `<a href="${esc(source.url)}" target="_blank" rel="noreferrer"><span>${esc(source.form)} · ${esc(source.title)}<small>${esc(source.date)}</small></span><b>↗</b></a>`).join('') : `<p class="muted source-loading">SEC eşleşmesi bulunamadı. <a href="https://www.sec.gov/edgar/search/#/q=${encodedSymbol}" target="_blank" rel="noreferrer">EDGAR aramasını aç ↗</a></p>`}`;
@@ -97,6 +111,7 @@ async function loadSources(item) {
   $('sourceLinks').innerHTML = '<div class="source-head"><span class="panel-kicker">BİRİNCİL KAYNAKLAR</span><span class="muted">BIST</span></div><p class="muted source-loading">KAP bildirimleri aranıyor…</p>';
   try {
     const response = await fetch(`/api/kap?symbol=${encodedSymbol}`);
+    if (!response.ok) throw new Error('Kaynak servisi kullanılamıyor');
     const payload = await response.json();
     const items = payload.items || [];
     $('sourceLinks').innerHTML = `<div class="source-head"><span class="panel-kicker">BİRİNCİL KAYNAKLAR</span><span class="muted">${items.length} bildirim</span></div>${items.length ? items.map((source) => `<a href="${esc(source.url)}" target="_blank" rel="noreferrer"><span>${esc(source.title)}<small>${esc(source.date)}</small></span><b>↗</b></a>`).join('') : '<p class="muted source-loading">Son 48 saatte eşleşen KAP bildirimi bulunamadı.</p>'}`;
@@ -157,7 +172,7 @@ function selectSymbol(symbol) {
   updateNotificationStatus();
   notifyIfTriggered(item, alert);
   const aiPick = (state.strategy?.result?.picks || []).find((pick) => pick.symbol === item.symbol);
-  $('aiEvidence').innerHTML = aiPick ? `<div class="evidence-head"><span class="panel-kicker purple">ANALİZ KANITI</span><span class="decision-pill ${aiPick.decision}">${esc(localizeDecision(aiPick.decision))} · ${number(aiPick.confidence, 0)}%</span></div><p>${esc(localizeAiText(aiPick.thesis))}</p><div class="evidence-columns"><div><b>Riskler</b><ul>${(aiPick.risks || []).map((risk) => `<li>${esc(localizeAiText(risk))}</li>`).join('')}</ul></div><div><b>Katalizörler</b><ul>${(aiPick.catalysts || []).map((catalyst) => `<li>${esc(localizeAiText(catalyst))}</li>`).join('')}</ul></div></div>` : '<div class="evidence-head"><span class="panel-kicker purple">ANALİZ KANITI</span><span class="muted">Bu sembol yapay zekâ listesinin dışında</span></div><p class="muted">Bu sembol için yapay zekâ açıklaması henüz bulunmuyor.</p>';
+  $('aiEvidence').innerHTML = aiPick ? `<div class="evidence-head"><span class="panel-kicker purple">ANALİZ KANITI</span><span class="decision-pill ${esc(aiPick.decision)}">${esc(localizeDecision(aiPick.decision))} · ${number(aiPick.confidence, 0)}%</span></div><p>${esc(localizeAiText(aiPick.thesis))}</p><div class="evidence-columns"><div><b>Riskler</b><ul>${(aiPick.risks || []).map((risk) => `<li>${esc(localizeAiText(risk))}</li>`).join('')}</ul></div><div><b>Katalizörler</b><ul>${(aiPick.catalysts || []).map((catalyst) => `<li>${esc(localizeAiText(catalyst))}</li>`).join('')}</ul></div></div>` : '<div class="evidence-head"><span class="panel-kicker purple">ANALİZ KANITI</span><span class="muted">Bu sembol yapay zekâ listesinin dışında</span></div><p class="muted">Bu sembol için yapay zekâ açıklaması henüz bulunmuyor.</p>';
   loadSources(item);
   $('watchlistToggle').disabled = false;
   $('saveAlert').disabled = false;
@@ -177,7 +192,7 @@ function renderPicks() {
   const hasResearchReadyScores = [...(state.data?.markets?.BIST?.items || []), ...(state.data?.markets?.US?.items || [])].some((item) => item.screen_score != null);
   $('aiSummary').textContent = hasResearchReadyScores ? localizeAiText(result?.market_summary || 'Yapay zekâ analizi henüz oluşturulmadı.') : 'Gecikmeli/EOD fiyat verisi mevcut. Temel veri bağlantısı tamamlanana kadar kesin hisse seçimi yayınlanmaz.';
   const picks = result?.picks || [];
-  $('aiPicks').innerHTML = hasResearchReadyScores && picks.length ? picks.map((pick) => `<article class="ai-pick" data-ai-symbol="${esc(pick.symbol)}"><span class="ai-rank">#${pick.rank}</span><div><b>${esc(pick.symbol)}</b><p>${esc(localizeAiText(pick.thesis))}</p></div><span class="confidence">${number(pick.confidence, 0)}%</span></article>`).join('') : '<p class="empty">Veri kapsamı tamamlanana kadar kesin seçim yayınlanmıyor.</p>';
+  $('aiPicks').innerHTML = hasResearchReadyScores && picks.length ? picks.map((pick) => `<article class="ai-pick" data-ai-symbol="${esc(pick.symbol)}"><span class="ai-rank">#${esc(pick.rank)}</span><div><b>${esc(pick.symbol)}</b><p>${esc(localizeAiText(pick.thesis))}</p></div><span class="confidence">${number(pick.confidence, 0)}%</span></article>`).join('') : '<p class="empty">Veri kapsamı tamamlanana kadar kesin seçim yayınlanmıyor.</p>';
   document.querySelectorAll('[data-ai-symbol]').forEach((card) => card.addEventListener('click', () => openSymbol(card.dataset.aiSymbol)));
 }
 
@@ -191,14 +206,12 @@ function renderStats() {
   $('statLeader').textContent = leader ? `${leader.symbol} · ${leader.market}` : '—';
   $('statPositive').textContent = number(items.filter((item) => (item.screen_score || 0) >= 70).length, 0);
   const date = state.data?.generated_at ? new Date(state.data.generated_at) : null;
-  $('statFreshness').textContent = date ? date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }) : '—';
+  const age = dataAgeHours(state.data);
+  $('statFreshness').textContent = Number.isFinite(age) ? `${number(age, 0)} saat` : 'Zaman eksik';
   $('refreshDate').textContent = date ? date.toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
   const pulse = (market) => {
     const marketItems = state.data?.markets?.[market]?.items || [];
-    const changes = marketItems.map((item) => Number(item.change_pct)).filter(Number.isFinite);
-    const average = changes.length ? changes.reduce((sum, value) => sum + value, 0) / changes.length : null;
-    const positive = changes.length ? (changes.filter((value) => value > 0).length / changes.length) * 100 : null;
-    return { count: marketItems.length, average, positive };
+    return marketPulse(marketItems);
   };
   const bistPulse = pulse('BIST');
   const usPulse = pulse('US');
@@ -238,24 +251,22 @@ function switchMarket(market) {
 
 async function loadData() {
   try {
-    const [marketResponse, staticResponse, strategyResponse] = await Promise.all([
-      fetch('/api/market?ts=' + Date.now()).catch(() => null),
-      fetch('/data/latest_market.json?ts=' + Date.now()),
-      fetch('/data/latest_strategy.json?ts=' + Date.now())
+    const [marketResponse, strategyResponse] = await Promise.all([
+      fetch('/api/market?ts=' + Date.now()),
+      fetch('/api/strategy?ts=' + Date.now()).catch(() => null)
     ]);
-    if (!staticResponse.ok && !marketResponse?.ok) throw new Error('market data unavailable');
+    if (!marketResponse.ok) throw new Error('market data unavailable');
     const remote = marketResponse?.ok ? await marketResponse.json() : null;
-    const fallback = staticResponse.ok ? await staticResponse.json() : null;
+
     const isLegacy = (payload) => !payload?.provider || /tradingview/i.test(JSON.stringify(payload));
-    state.data = remote?.markets && !isLegacy(remote) ? remote : (!isLegacy(fallback) ? fallback : null);
+    state.data = remote?.markets && !isLegacy(remote) ? remote : null;
     if (!state.data) throw new Error('market data unavailable');
-    const strategy = strategyResponse.ok ? await strategyResponse.json() : null;
-    state.strategy = state.data.provider === 'BIST Data Service + Twelve Data EOD' ? strategy : null;
-    const generatedAt = state.data.generated_at ? new Date(state.data.generated_at) : null;
-    const ageHours = generatedAt && !Number.isNaN(generatedAt.getTime()) ? (Date.now() - generatedAt.getTime()) / 3600000 : Infinity;
+    const strategy = state.data.gemini || (strategyResponse?.ok ? await strategyResponse.json() : null);
+    state.strategy = dataAgeHours(state.data) <= 96 ? validStrategy(strategy, state.data) : null;
+    const ageHours = dataAgeHours(state.data);
     const ok = !state.data.errors?.length && Object.keys(state.data.markets || {}).length;
     const delayed = Object.values(state.data.markets || {}).some((market) => market.delayed || market.data_quality === 'delayed' || market.data_quality === 'eod');
-    const statusLabel = !ok ? 'veri uyarısı' : delayed ? (ageHours > 36 ? 'gecikmeli · veri eski' : 'gecikmeli · araştırma verisi') : ageHours > 36 ? 'veri eski' : 'günlük araştırma verisi';
+    const statusLabel = !ok ? 'veri uyarısı' : delayed ? (ageHours > 96 ? 'gecikmeli · veri eski' : 'gecikmeli · araştırma verisi') : ageHours > 96 ? 'veri eski' : 'günlük araştırma verisi';
     $('dataStatus').innerHTML = `<i></i> ${statusLabel}`;
     $('dataStatus').title = delayed ? 'BIST verisi gecikmeli, ABD verisi günlük kapanıştır. Araştırma amaçlıdır; otomatik emir gönderilmez.' : 'Son tamamlanan günlük tarama.';
     renderStats(); renderPicks(); switchMarket(state.market);

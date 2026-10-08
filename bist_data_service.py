@@ -4,6 +4,7 @@ Bu adaptör, BIST fiyatlarını ayrı bir gecikmeli Render servisi üzerinden al
 Twelve Data kotası BIST için kullanılmaz. Servis sözleşmesi /all endpoint'idir.
 """
 import json
+import math
 import os
 from datetime import datetime, timezone
 from urllib.error import HTTPError, URLError
@@ -22,7 +23,8 @@ def _number(value):
     if value is None or value == "":
         return None
     try:
-        return float(value)
+        number = float(value)
+        return number if math.isfinite(number) else None
     except (TypeError, ValueError):
         return None
 
@@ -51,7 +53,7 @@ def _normalize(row):
     symbol = str(row.get("symbol") or row.get("ticker") or "").upper().strip()
     price = _number(row.get("price") or row.get("last") or row.get("close"))
     previous = _number(row.get("previous_close") or row.get("prev_close") or row.get("previousClose"))
-    change = _number(row.get("change_percent") or row.get("change_pct") or row.get("percent_change"))
+    change = next((_number(row[key]) for key in ("change_percent", "change_pct", "percent_change") if row.get(key) is not None), None)
     if change is None and price is not None and previous:
         change = ((price - previous) / previous) * 100
     return score_candidate({
@@ -87,6 +89,11 @@ def collect_bist():
     payload = _request(base_url, os.getenv("BIST_DATA_SERVICE_API_KEY", "").strip())
     rows = payload.get("quotes") or payload.get("data") or payload.get("items") or []
     items = [_normalize(row) for row in rows if isinstance(row, dict) and (row.get("symbol") or row.get("ticker"))]
+    items = [item for item in items if item["price"] is not None and item["price"] > 0 and (item["as_of"] or payload.get("last_update") or payload.get("updated_at"))]
+    for item in items:
+        item["as_of"] = item["as_of"] or payload.get("last_update") or payload.get("updated_at")
+    if not items:
+        raise BistDataServiceError("Geçerli fiyat ve zaman içeren BIST kaydı yok.")
     return {
         "market": "BIST",
         "source": "BIST Data Service · gecikmeli",
